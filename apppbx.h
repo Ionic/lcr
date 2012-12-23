@@ -217,6 +217,8 @@ class EndpointAppPBX : public EndpointApp
 	void port_resume(struct port_list *portlist, int message_type, union parameter *param);
 	void port_enablekeypad(struct port_list *portlist, int message_type, union parameter *param);
 	void port_disable_dejitter(struct port_list *portlist, int message_type, union parameter *param);
+	void port_updatebridge(struct port_list *portlist, int message_type, union parameter *param);
+	void port_vootp(struct port_list *portlist, int message_type, union parameter *param);
 	void ea_message_join(unsigned int join_id, int message, union parameter *param);
 	void join_crypt(struct port_list *portlist, int message_type, union parameter *param);
 	void join_mISDNsignal(struct port_list *portlist, int message_type, union parameter *param);
@@ -365,6 +367,8 @@ class EndpointAppPBX : public EndpointApp
 	void cryptman_msg2crengine(int msg, unsigned char *buf, int len);
 	void cryptman_state(int state);
 	void cryptman_timeout(int secs);
+	int vootp_on(int enable);
+
 	void message_disconnect_port(struct port_list *portlist, int cause, int location, const char *display);
 	void logmessage(int message_type, union parameter *param, unsigned int port_id, int dir);
 	void trace_header(const char *name, int direction);

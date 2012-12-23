@@ -169,6 +169,8 @@ struct extension {
 	int facility;		/* must be set to forward facility to terminal */
 	int datacall;		/* data calls are handled as voice calls */
 	int no_seconds;		/* don't include seconds in the connect message */
+
+	char otp_ident[9];	/* up to 8 bytes of ident */
 };
 
 int read_extension(struct extension *ext, char *number);

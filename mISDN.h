@@ -109,6 +109,7 @@ class PmISDN : public Port
 	int message_epoint(unsigned int epoint_id, int message, union parameter *param);
 	void message_mISDNsignal(unsigned int epoint_id, int message_id, union parameter *param);
 	void message_crypt(unsigned int epoint_id, int message_id, union parameter *param);
+	void message_vootp(unsigned int epoint_id, int message_id, union parameter *param);
 	struct mISDNport *p_m_mISDNport;	/* pointer to port */
 	int p_m_delay;				/* use delay instead of dejitter */
 	int p_m_tx_dejitter;			/* use dejitter on transmit data to DSP */

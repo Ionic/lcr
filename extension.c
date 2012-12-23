@@ -755,6 +755,10 @@ int read_extension(struct extension *ext, char *num)
 			} else {
 				PDEBUG(DEBUG_CONFIG, "unknown param for seconds: %s\n", param);
 			}
+		} else
+		if (!strcmp(option,"otp-ident")) {
+			SCPY(ext->otp_ident, param);
+			PDEBUG(DEBUG_CONFIG, "otp-ident: %s\n",param);
 		} else {
 			PERROR_RUNTIME("Error in %s (line %d): wrong option keyword %s.\n",filename,line,option);
 		}
@@ -1143,6 +1147,9 @@ int write_extension(struct extension *ext, char *number)
 
 	fprintf(fp,"# Include seconds (time) in the connect message. (Should be always enabled.)\n");
 	fprintf(fp,"seconds         %s\n\n",ext_yesno[1-ext->no_seconds]);
+
+	fprintf(fp,"# Identity string for VoOTP encryption\n");
+	fprintf(fp,"otp-ident       %s\n\n", ext->otp_ident);
 
 	fprintf(fp,"# Last outgoing and incoming numbers (including prefix)\n");
 	i = 0;

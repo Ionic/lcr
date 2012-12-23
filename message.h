@@ -351,6 +351,12 @@ struct param_3pty {
 	unsigned char invoke_id;
 };
 
+struct param_vootp {
+	int enable;
+	int failed;
+	char id[32];
+};
+
 /* structure of message parameter */
 union parameter {
 	struct param_tone tone; /* MESSAGE_TONE */
@@ -379,6 +385,7 @@ union parameter {
 	struct param_traffic traffic; /* MESSAGE_TRAFFIC */
 	struct param_3pty threepty; /* MESSAGE_TRAFFIC */
 	unsigned int queue; /* MESSAGE_DISABLE_DEJITTER */
+	struct param_vootp vootp; /* MESSAGE_VOOTP */
 };
 
 enum { /* message flow */
@@ -435,7 +442,9 @@ enum { /* messages between entities */
 	MESSAGE_TRAFFIC,	/* exchange bchannel traffic */
 	MESSAGE_3PTY,		/* 3PTY call invoke */
 	MESSAGE_TRANSFER,	/* call transfer invoke */
-	MESSAGE_DISABLE_DEJITTER/* tell (mISDN) port not to dejitter */
+	MESSAGE_DISABLE_DEJITTER,/* tell (mISDN) port not to dejitter */
+	MESSAGE_UPDATEBRIDGE,	/* tell join to update bridge. (sent by mISDN port) */
+	MESSAGE_VOOTP,		/* enable/disable VoOTP */
 };
 
 #define MESSAGES static const char *messages_txt[] = { \
@@ -475,6 +484,8 @@ enum { /* messages between entities */
 	"MESSAGE_3PTY", \
 	"MESSAGE_TRANSFER", \
 	"MESSAGE_DISABLE_DEJITTER", \
+	"MESSAGE_UPDATEBRIDGE", \
+	"MESSAGE_VOOTP", \
 };
 
 

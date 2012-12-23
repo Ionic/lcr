@@ -525,6 +525,18 @@ void EndpointAppPBX::keypad_function(char digit)
 			join_join_dss1();
 		break;
 
+		/* VOOTP on */
+		case '1':
+		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) enable VoOTP.\n", ea_endpoint->ep_serial);
+		vootp_on(1);
+		break;
+
+		/* VOOTP off */
+		case '2':
+		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) disable VoOTP.\n", ea_endpoint->ep_serial);
+		vootp_on(0);
+		break;
+
 #ifdef WITH_CRYPT
 		/* crypt shared */
 		case '7':
@@ -544,7 +556,6 @@ void EndpointAppPBX::keypad_function(char digit)
 		encrypt_off();
 		break;
 #endif
-
 		default:	
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) unsupported keypad digit '%c'.\n", ea_endpoint->ep_serial, digit);
 	}
@@ -2430,6 +2441,24 @@ void EndpointAppPBX::port_disable_dejitter(struct port_list *portlist, int messa
 }
 
 
+/* port MESSAGE_UPDATEBRIDGE  */
+void EndpointAppPBX::port_updatebridge(struct port_list *portlist, int message_type, union parameter *param)
+{
+	struct lcr_msg *message;
+
+	message = message_create(ea_endpoint->ep_serial, ea_endpoint->ep_join_id, EPOINT_TO_JOIN, MESSAGE_UPDATEBRIDGE);
+	message_put(message);
+}
+
+
+/* port MESSAGE_VOOTP  */
+void EndpointAppPBX::port_vootp(struct port_list *portlist, int message_type, union parameter *param)
+{
+	if (param->vootp.failed)
+		set_tone(ea_endpoint->ep_portlist, "crypt_off");
+}
+
+
 /* port sends message to the endpoint
  */
 void EndpointAppPBX::ea_message_port(unsigned int port_id, int message_type, union parameter *param)
@@ -2624,6 +2653,16 @@ void EndpointAppPBX::ea_message_port(unsigned int port_id, int message_type, uni
 		case MESSAGE_DISABLE_DEJITTER:
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) incoming disable dejitter message (terminal '%s', caller id '%s')\n", ea_endpoint->ep_serial, e_ext.number, e_callerinfo.id);
 		port_disable_dejitter(portlist, message_type, param);
+		break;
+
+		case MESSAGE_UPDATEBRIDGE:
+		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) incoming updatebridge message (terminal '%s', caller id '%s')\n", ea_endpoint->ep_serial, e_ext.number, e_callerinfo.id);
+		port_updatebridge(portlist, message_type, param);
+		break;
+
+		case MESSAGE_VOOTP:
+		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) incoming vootp message (terminal '%s', caller id '%s')\n", ea_endpoint->ep_serial, e_ext.number, e_callerinfo.id);
+		port_vootp(portlist, message_type, param);
 		break;
 
 
@@ -4300,6 +4339,30 @@ int EndpointAppPBX::check_external(const char **errstr, class Port **port)
 		return(1);
 	}
 	return(0);
+}
+
+int EndpointAppPBX::vootp_on(int on)
+{
+#ifndef WITH_VOOTP
+	set_tone(ea_endpoint->ep_portlist, "crypt_off");
+#else
+	if (!e_ext.otp_ident[0]) {
+		set_tone(ea_endpoint->ep_portlist, "crypt_off");
+		return -EINVAL;
+	}
+	if(ea_endpoint->ep_portlist) {
+		struct lcr_msg *message;
+
+		message = message_create(ea_endpoint->ep_serial, ea_endpoint->ep_portlist->port_id, EPOINT_TO_PORT, MESSAGE_VOOTP);
+		message->param.vootp.enable = on;
+		SCPY(message->param.vootp.id, e_ext.otp_ident);
+		message_put(message);
+	}
+	if (!on)
+		set_tone(ea_endpoint->ep_portlist, "crypt_off");
+#endif
+
+	return 0;
 }
 
 void EndpointAppPBX::logmessage(int message_type, union parameter *param, unsigned int port_id, int dir)

@@ -132,6 +132,18 @@ SIP_LIB += $(SOFIA_LIBS)
 
 endif
 
+VOOTP_LIB =
+
+if ENABLE_VOOTP
+
+VOOTP_INCLUDE = -DWITH_VOOTP $(VOOTP_CFLAGS)
+
+VOOTP_SOURCE =
+
+VOOTP_LIB += $(VOOTP_LIBS)
+
+endif
+
 bin_PROGRAMS = lcradmin gentones genwave
 
 sbin_PROGRAMS = lcr genrc genextension
@@ -166,17 +178,17 @@ uninstall-hook:
 	cd '$(DESTDIR)$(astmoddir)' && rm -f chan_lcr.so
 endif
 
-AM_CPPFLAGS = $(all_includes) -I$(top_srcdir)/include $(MISDN_INCLUDE) $(GSM_INCLUDE) $(SS5_INCLUDE) $(SIP_INCLUDE) -Wall $(INSTALLATION_DEFINES)
+AM_CPPFLAGS = $(all_includes) $(MISDN_INCLUDE) $(GSM_INCLUDE) $(SS5_INCLUDE) $(SIP_INCLUDE) $(VOOTP_INCLUDE) -Wall $(INSTALLATION_DEFINES)
 
 lcr_SOURCES = \
 	main.c select.c trace.c options.c tones.c alawulaw.c cause.c interface.c message.c callerid.c socket_server.c \
 	port.cpp vbox.cpp remote.cpp \
-	$(MISDN_SOURCE) $(GSM_SOURCE) $(SS5_SOURCE) $(SIP_SOURCE) \
+	$(MISDN_SOURCE) $(GSM_SOURCE) $(SS5_SOURCE) $(SIP_SOURCE) $(VOOTP_SOURCE) \
 	endpoint.cpp endpointapp.cpp \
 	appbridge.cpp apppbx.cpp route.c action.cpp action_efi.cpp action_vbox.cpp extension.c mail.c \
 	join.cpp joinpbx.cpp
 
-lcr_LDADD = $(LIBCRYPTO) $(MISDN_LIB) -lpthread $(GSM_LIB) $(SIP_LIB)
+lcr_LDADD = $(LIBCRYPTO) $(MISDN_LIB) -lpthread $(GSM_LIB) $(SIP_LIB) $(VOOTP_LIB)
 
 
 lcradmin_SOURCES = lcradmin.c cause.c options.c

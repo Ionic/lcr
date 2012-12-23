@@ -221,6 +221,12 @@ int main(int argc, char *argv[])
 	crc_init();
 #endif
 
+#ifdef WITH_VOOTP
+	/* init VoOTP */
+	vootp_init(stderr);
+	vootp_loglevel(VOOTP_LOGL_INFO);
+#endif
+
 	/* the mutex init */
 	if (pthread_mutex_init(&mutexd, NULL)) {
 		fprintf(stderr, "cannot create 'PDEBUG' mutex\n");

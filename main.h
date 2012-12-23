@@ -11,6 +11,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <stdarg.h>
 #include <unistd.h>
 #include <string.h>
@@ -147,6 +148,15 @@ void debug(const char *file, const char *function, int line, const char *prefix,
 #include "appbridge.h"
 #include "callerid.h"
 #include "route.h"
+#ifdef WITH_VOOTP
+ #ifdef __cplusplus
+  extern "C" {
+ #endif
+#include <vootp.h>
+ #ifdef __cplusplus
+  }
+ #endif
+#endif
 #include "port.h"
 #include "remote.h"
 #ifdef WITH_MISDN

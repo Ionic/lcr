@@ -1435,17 +1435,44 @@ void PmISDN::message_crypt(unsigned int epoint_id, int message_id, union paramet
 
 }
 
+/* MESSAGE_VOOTP */
+void PmISDN::message_vootp(unsigned int epoint_id, int message_id, union parameter *param)
+{
+	struct lcr_msg *message;
+
+	message = message_create(p_serial, ACTIVE_EPOINT(p_epointlist), PORT_TO_EPOINT, MESSAGE_UPDATEBRIDGE);
+	message_put(message);
+
+#if 0
+does not make sense, since remote port may dejitter
+	if (param->vootp.enable) {
+		PDEBUG(DEBUG_ISDN, "PmISDN(%s) received vootp enable order, so we disable de-jitter.\n", p_name);
+		p_m_disable_dejitter = 1;
+	}
+#endif
+	update_rxoff();
+}
+
 /*
  * endpoint sends messages to the port
  */
 int PmISDN::message_epoint(unsigned int epoint_id, int message_id, union parameter *param)
 {
+	/* messages also handled by base class */
+	switch(message_id) {
+		case MESSAGE_VOOTP: /* crypt control command */
+		PDEBUG(DEBUG_ISDN, "PmISDN(%s) received VoOTP encryption\n", p_name);
+		message_vootp(epoint_id, message_id, param);
+		break;
+	}
+
 	if (Port::message_epoint(epoint_id, message_id, param)) {
 		if (message_id == MESSAGE_BRIDGE)
 			update_rxoff();
 		return 1;
 	}
 
+	/* messages not handled by base class */
 	switch(message_id) {
 		case MESSAGE_mISDNSIGNAL: /* user command */
 		PDEBUG(DEBUG_ISDN, "PmISDN(%s) received special ISDN SIGNAL %d.\n", p_name, param->mISDNsignal.message);
@@ -2274,6 +2301,9 @@ int PmISDN::bridge_rx(unsigned char *data, int length)
 	unsigned char buf[MISDN_HEADER_LEN+((length>p_m_preload)?length:p_m_preload)];
 	struct mISDNhead *hh = (struct mISDNhead *)buf;
 	int ret;
+
+	if ((ret = Port::bridge_rx(data, length)))
+		return ret;
 
 	if (p_m_b_index < 0)
 		return -EIO;

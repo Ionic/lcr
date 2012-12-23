@@ -358,6 +358,17 @@ void JoinPBX::bridge(void)
 			relation = relation->next;
 			continue;
 		}
+#ifdef WITH_VOOTP
+		if (port->p_vootp) {
+			PDEBUG(DEBUG_JOIN, "join%d ignoring relation ep%d because it's port uses VoOTP.\n", j_serial, epoint->ep_serial);
+			if (allmISDN) {
+				PDEBUG(DEBUG_JOIN, "join%d not all endpoints can support mISDN bridging.\n", j_serial);
+				allmISDN = 0;
+			}
+			relation = relation->next;
+			continue;
+		}
+#endif
 
 		relation = relation->next;
 	}
@@ -412,6 +423,17 @@ no need to count, because j_3pty is taken into account below when checking relat
 				relation = relation->next;
 				continue;
 			}
+#ifdef WITH_VOOTP
+			if (port->p_vootp) {
+				PDEBUG(DEBUG_JOIN, "join%d ignoring relation ep%d because it's port uses VoOTP.\n", joinpbx_3pty->j_serial, epoint->ep_serial);
+				if (allmISDN) {
+					PDEBUG(DEBUG_JOIN, "join%d not all endpoints can support mISDN bridging.\n", joinpbx_3pty->j_serial);
+					allmISDN = 0;
+				}
+				relation = relation->next;
+				continue;
+			}
+#endif
 
 			relation = relation->next;
 		}
@@ -806,6 +828,11 @@ void JoinPBX::message_epoint(unsigned int epoint_id, int message_type, union par
 				joinpbx_debug(this, "Join::message_epoint{after setting new channel state}");
 		}
 		return;
+
+		case MESSAGE_UPDATEBRIDGE:
+			trigger_work(&j_updatebridge);
+			joinpbx_debug(this, "Join::message_epoint{bridge is updated due to request from mISDN port}");
+			break;
 
 		/* track notify */
 		case MESSAGE_NOTIFY:

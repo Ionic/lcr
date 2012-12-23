@@ -412,6 +412,11 @@ bfi:
 /* send traffic to gsm */
 int Pgsm::bridge_rx(unsigned char *data, int len)
 {
+	int ret;
+
+	if ((ret = Port::bridge_rx(data, len)))
+		return ret;
+
 	if (p_tone_name[0])
 		return -EINVAL;
 

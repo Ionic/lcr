@@ -188,6 +188,11 @@ Port::Port(int type, const char *portname, struct port_settings *settings, struc
 	p_record_buffer_writep = 0;
 	p_record_buffer_dir = 0;
 
+	/* VoOTP */
+#ifdef WITH_VOOTP
+	p_vootp = NULL;
+#endif
+
 	/* append port to chain */
 	next = NULL;
 	temp = port_first;
@@ -213,6 +218,13 @@ Port::~Port(void)
 	struct lcr_msg *message;
 
  	PDEBUG(DEBUG_PORT, "removing port (%d) of type 0x%x, name '%s' interface '%s'\n", p_serial, p_type, p_name, p_interface_name);
+
+#ifdef WITH_VOOTP
+	if (p_vootp) {
+		vootp_destroy(p_vootp);
+		p_vootp = NULL;
+	}
+#endif
 
 	if (p_bridge) {
 		PDEBUG(DEBUG_PORT, "Removing us from bridge %u\n", p_bridge->bridge_id);
@@ -376,6 +388,10 @@ void Port::set_tone(const char *dir, const char *name)
 	}
 }
 
+
+void Port::set_display(const char *text)
+{
+}
 
 /*
  * set the file in the tone directory for vbox playback
@@ -637,6 +653,13 @@ int Port::message_epoint(unsigned int epoint_id, int message_id, union parameter
 		PDEBUG(DEBUG_PORT, "PORT(%s) bridging to id %d\n", p_name, param->bridge_id);
 		bridge(param->bridge_id);
 		return 1;
+
+#ifdef WITH_VOOTP
+	case MESSAGE_VOOTP: /* enable / disable VoOTP */
+		PDEBUG(DEBUG_PORT, "PORT(%s) VoOTP enabled: %d\n", p_name, param->vootp.enable);
+		set_vootp(&param->vootp);
+		return 1;
+#endif
 	}
 
 	return 0;
@@ -1312,6 +1335,11 @@ int Port::bridge_tx(unsigned char *data, int len)
 	signed long *sum;
 	unsigned char *buf;
 
+#ifdef WITH_VOOTP
+	if (p_vootp)
+		vootp_encrypt_stream(p_vootp, data, len);
+#endif
+
 	/* less than two ports, so drop */
 	if (!p_bridge || !p_bridge->first || !p_bridge->first->next)
 		return -EIO;
@@ -1427,9 +1455,47 @@ int bridge_timeout(struct lcr_timer *timer, void *instance, int index)
 }
 
 
-/* receive data from remote Port (dummy, needs to be inherited) */
+/* receive data from remote Port */
 int Port::bridge_rx(unsigned char *data, int len)
 {
-	return 0; /* datenklo */
+
+#ifdef WITH_VOOTP
+	if (p_vootp)
+		vootp_decrypt_stream(p_vootp, data, len);
+#endif
+
+	return 0;
 }
 
+#ifdef WITH_VOOTP
+static void vootp_info(void *priv, const char *text)
+{
+	class Port *port = (class Port *)priv;
+	char display[strlen(text) + 1];
+
+	SCPY(display, text);
+	if (display[0])
+		display[strlen(display) - 1] = '\0';
+
+	port->set_display(display);
+}
+
+void Port::set_vootp(struct param_vootp *vootp)
+{
+	if (p_vootp) {
+		vootp_destroy(p_vootp);
+		p_vootp = NULL;
+	}
+	if (vootp->enable) {
+		p_vootp = vootp_create(this, (options.law=='a'), options.otp_dir, NULL, NULL, vootp->id, vootp_info);
+//		vootp_loglevel(VOOTP_LOGL_DEBUG);
+		if (!p_vootp) {
+			struct lcr_msg *message;
+
+			message = message_create(p_serial, p_epointlist->epoint_id, PORT_TO_EPOINT, MESSAGE_VOOTP);
+			message->param.vootp.failed = 1;
+			message_put(message);
+		}
+	}
+}
+#endif

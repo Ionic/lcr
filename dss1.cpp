@@ -2552,18 +2552,7 @@ void Pdss1::message_connect(unsigned int epoint_id, int message_id, union parame
 	/* screen outgoing caller id */
 	do_screen(1, p_connectinfo.id, sizeof(p_connectinfo.id), &p_connectinfo.ntype, &p_connectinfo.present, p_m_mISDNport->ifport->interface->name);
 
-	/* only display at connect state */
-	if (p_state == PORT_STATE_CONNECT)
-	if (p_connectinfo.display[0]) {
-		/* sending information */
-		l3m = create_l3msg();
-		l1l2l3_trace_header(p_m_mISDNport, this, L3_INFORMATION_REQ, DIRECTION_OUT);
-		if (p_m_d_ntmode || p_m_d_tespecial)
-			enc_ie_display(l3m, (unsigned char *)p_connectinfo.display);
-		end_trace();
-		p_m_mISDNport->ml3->to_layer3(p_m_mISDNport->ml3, MT_INFORMATION, p_m_d_l3id, l3m);
-		return;
-	}
+	set_display(p_connectinfo.display);
 
 	if (p_state!=PORT_STATE_IN_SETUP && p_state!=PORT_STATE_IN_OVERLAP && p_state!=PORT_STATE_IN_PROCEEDING && p_state!=PORT_STATE_IN_ALERTING) {
 		/* connect command only possible in setup, proceeding or alerting state */
@@ -3088,6 +3077,23 @@ int stack2manager(struct mISDNport *mISDNport, unsigned int cmd, unsigned int pi
 	return(0);
 }
 
+void Pdss1::set_display(const char *text)
+{
+	l3_msg *l3m;
+
+	/* only display at connect state */
+	if (p_state == PORT_STATE_CONNECT)
+	if (text[0]) {
+		/* sending information */
+		l3m = create_l3msg();
+		l1l2l3_trace_header(p_m_mISDNport, this, L3_INFORMATION_REQ, DIRECTION_OUT);
+		if (p_m_d_ntmode || p_m_d_tespecial)
+			enc_ie_display(l3m, (unsigned char *)text);
+		end_trace();
+		p_m_mISDNport->ml3->to_layer3(p_m_mISDNport->ml3, MT_INFORMATION, p_m_d_l3id, l3m);
+		return;
+	}
+}
 
 
 

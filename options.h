@@ -30,6 +30,7 @@ struct options {
 	int     socketuser;             /* socket chown to this user */
 	int     socketgroup;            /* socket chgrp to this group */
 	int	polling;
+	char	otp_dir[256];		/* directory of OTP files */
 };	
 
 extern struct options options;

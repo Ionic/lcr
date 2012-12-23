@@ -191,6 +191,11 @@ void VBoxPort::send_announcement(void)
 
 int VBoxPort::bridge_rx(unsigned char *data, int len)
 {
+	int ret;
+
+	if ((ret = Port::bridge_rx(data, len)))
+		return ret;
+
 	if (p_record)
 		record(data, len, 1); // from up
 	return 0;

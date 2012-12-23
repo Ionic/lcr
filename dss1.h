@@ -20,6 +20,7 @@ class Pdss1 : public PmISDN
 	void message_isdn(unsigned int cmd, unsigned int pid, struct l3_msg *l3m);
 	int p_m_d_ces;				/* ntmode: tei&sapi */
 	int message_epoint(unsigned int epoint_id, int message, union parameter *param);
+	void set_display(const char *text);
 
 	int p_m_d_ntmode;			/* flags the nt-mode */
 	int p_m_d_tespecial;			/* special te-mode with all nt-mode IEs */

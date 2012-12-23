@@ -196,6 +196,7 @@ class Port
 	virtual void set_tone(const char *dir, const char *name);
 	virtual int read_audio(unsigned char *buffer, int length);
 	virtual void update_load(void);
+	virtual void set_display(const char *text);
 
 	struct port_settings p_settings;
 	char p_interface_name[64];
@@ -269,6 +270,11 @@ class Port
 	char p_record_vbox_email[128];
 	int p_record_vbox_email_file;
 	virtual void update_rxoff(void);	/* inherited by mISDNport, to control rxoff */
+
+#ifdef WITH_VOOTP
+	vootp_t *p_vootp;			/* VoOTP instance */
+	void set_vootp(struct param_vootp *vootp);
+#endif
 
 	void free_epointlist(struct epoint_list *epointlist);
 	void free_epointid(unsigned int epoint_id);

@@ -233,6 +233,10 @@ int Premote::bridge_rx(unsigned char *data, int len)
 {
 	union parameter newparam;
 	int l;
+	int ret;
+
+	if ((ret = Port::bridge_rx(data, len)))
+		return ret;
 
 	/* send tones, if connected, or if early audio is enabled in proceeding/alerting state */
 	if (p_state != PORT_STATE_CONNECT

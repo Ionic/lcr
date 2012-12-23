@@ -597,9 +597,14 @@ we only support alaw and ulaw!
 /* receive from remote */
 int Psip::bridge_rx(unsigned char *data, int len)
 {
+	int ret;
+
 	/* don't bridge, if tones are provided */
 	if (p_tone_name[0])
 		return -EBUSY;
+
+	if ((ret = Port::bridge_rx(data, len)))
+		return ret;
 
 	/* write to rx buffer */
 	while(len--) {

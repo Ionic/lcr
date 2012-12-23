@@ -35,7 +35,8 @@ struct options options = {
 	0700,				/* rights of lcr admin socket */
 	-1,                             /* socket user (-1= no change) */
 	-1,                             /* socket group (-1= no change) */
-	1,				/* use polling of main loop */
+	0,				/* use polling of main loop */
+	"/root",			/* OTP directory */
 };
 
 char options_error[256];
@@ -235,6 +236,13 @@ int read_options(char *options_error)
 		} else
 		if (!strcmp(option,"polling")) {
 			options.polling = 1;
+		} else
+		if (!strcmp(option,"otp-dir")) {
+			if (param[0]==0) {
+				UPRINT(options_error, "Error in %s (line %d): parameter for option %s missing.\n", filename,line,option);
+				goto error;
+			}
+			SCPY(options.otp_dir, param);
 		} else {
 			UPRINT(options_error, "Error in %s (line %d): wrong option keyword %s.\n", filename,line,option);
 			goto error;
