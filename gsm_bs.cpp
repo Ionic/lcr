@@ -100,39 +100,25 @@ void Pgsm_bs::call_conf_ind(unsigned int msg_type, unsigned int callref, struct 
 
 	new_state(PORT_STATE_OUT_PROCEEDING);
 
-	/* get list of offered payload types
-	 * if list ist empty, the FR V1 is selected */
+	/* get list of offered payload types */
 	select_payload_type(mncc, payload_types, media_types, &payloads, sizeof(payload_types));
-	/* if no given payload type is supported, we select from channel type */
+	/* if no given payload type is supported, we must release */
 	if (!payloads) {
-		switch (mncc->lchan_type) {
-		case GSM_LCHAN_TCH_F:
-			media_types[0] = MEDIA_TYPE_GSM;
-			payload_types[0] = PAYLOAD_TYPE_GSM;
-			payloads = 1;
-			break;
-		case GSM_LCHAN_TCH_H:
-			media_types[0] = MEDIA_TYPE_GSM_HR;
-			payload_types[0] = 96; /* dynamic */
-			payloads = 1;
-			break;
-		default:
-			mncc = create_mncc(MNCC_REL_REQ, callref);
-			gsm_trace_header(p_interface_name, this, MNCC_REL_REQ, DIRECTION_OUT);
-			mncc->fields |= MNCC_F_CAUSE;
-			mncc->cause.coding = 3;
-			mncc->cause.location = 1;
-			mncc->cause.value = 65;
-			add_trace("cause", "coding", "%d", mncc->cause.coding);
-			add_trace("cause", "location", "%d", mncc->cause.location);
-			add_trace("cause", "value", "%d", mncc->cause.value);
-			add_trace("reason", NULL, "Given lchan not supported");
-			end_trace();
-			send_and_free_mncc(p_g_lcr_gsm, mncc->msg_type, mncc);
-			new_state(PORT_STATE_RELEASE);
-			trigger_work(&p_g_delete);
-			return;
-		}
+		mncc = create_mncc(MNCC_REL_REQ, callref);
+		gsm_trace_header(p_interface_name, this, MNCC_REL_REQ, DIRECTION_OUT);
+		mncc->fields |= MNCC_F_CAUSE;
+		mncc->cause.coding = 3;
+		mncc->cause.location = 1;
+		mncc->cause.value = 65;
+		add_trace("cause", "coding", "%d", mncc->cause.coding);
+		add_trace("cause", "location", "%d", mncc->cause.location);
+		add_trace("cause", "value", "%d", mncc->cause.value);
+		add_trace("reason", NULL, "Given lchan not supported");
+		end_trace();
+		send_and_free_mncc(p_g_lcr_gsm, mncc->msg_type, mncc);
+		new_state(PORT_STATE_RELEASE);
+		trigger_work(&p_g_delete);
+		return;
 	}
 
 	/* select first payload type that matches the rtp list */
@@ -342,7 +328,6 @@ void Pgsm_bs::select_payload_type(struct gsm_mncc *mncc, unsigned char *payload_
 {
 	int media_type;
 	unsigned char payload_type;
-	int half;
 	void *encoder, *decoder;
 
 	*payloads = 0;
@@ -355,7 +340,6 @@ void Pgsm_bs::select_payload_type(struct gsm_mncc *mncc, unsigned char *payload_
 
 		add_trace("bearer", "capa", "given by MS");
 		for (i = 0; mncc->bearer_cap.speech_ver[i] >= 0; i++) {
-			half = 0;
 			/* select payload type we support */
 			switch (mncc->bearer_cap.speech_ver[i]) {
 			case 0:
@@ -385,7 +369,6 @@ void Pgsm_bs::select_payload_type(struct gsm_mncc *mncc, unsigned char *payload_
 				payload_type = dynamic_type++;
 				encoder = p_g_hr_encoder;
 				decoder = p_g_hr_decoder;
-				half = 1;
 				break;
 			case 5:
 				add_trace("speech", "version", "AMR Half Rate given");
@@ -393,7 +376,6 @@ void Pgsm_bs::select_payload_type(struct gsm_mncc *mncc, unsigned char *payload_
 				payload_type = dynamic_type++;
 				encoder = p_g_amr_encoder;
 				decoder = p_g_amr_decoder;
-				half = 1;
 				break;
 			default:
 				add_trace("speech", "version", "%d given", mncc->bearer_cap.speech_ver[i]);
@@ -403,14 +385,6 @@ void Pgsm_bs::select_payload_type(struct gsm_mncc *mncc, unsigned char *payload_
 			/* wen don't support it, so we check the next */
 			if (!media_type) {
 				add_trace("speech", "ignored", "Not supported by LCR");
-				continue;
-			}
-			if (!half && mncc->lchan_type != GSM_LCHAN_TCH_F) {
-				add_trace("speech", "ignored", "Not TCH/F");
-				continue;
-			}
-			if (half && mncc->lchan_type != GSM_LCHAN_TCH_H) {
-				add_trace("speech", "ignored", "Not TCH/H");
 				continue;
 			}
 			if (!p_g_rtp_bridge) {
@@ -525,39 +499,25 @@ void Pgsm_bs::setup_ind(unsigned int msg_type, unsigned int callref, struct gsm_
 	p_capainfo.source_mode = B_MODE_TRANSPARENT;
 	p_g_mode = p_capainfo.source_mode;
 
-	/* get list of offered payload types
-	 * if list ist empty, the FR V1 is selected */
+	/* get list of offered payload types */
 	select_payload_type(mncc, payload_types, media_types, &payloads, sizeof(payload_types));
-	/* if no given payload type is supported, we select from channel type */
+	/* if no given payload type is supported, we must release */
 	if (!payloads) {
-		switch (mncc->lchan_type) {
-		case GSM_LCHAN_TCH_F:
-			media_types[0] = MEDIA_TYPE_GSM;
-			payload_types[0] = PAYLOAD_TYPE_GSM;
-			payloads = 1;
-			break;
-		case GSM_LCHAN_TCH_H:
-			media_types[0] = MEDIA_TYPE_GSM_HR;
-			payload_types[0] = 96; /* dynamic */
-			payloads = 1;
-			break;
-		default:
-			mncc = create_mncc(MNCC_REJ_REQ, callref);
-			gsm_trace_header(p_interface_name, this, MNCC_REJ_REQ, DIRECTION_OUT);
-			mncc->fields |= MNCC_F_CAUSE;
-			mncc->cause.coding = 3;
-			mncc->cause.location = 1;
-			mncc->cause.value = 65;
-			add_trace("cause", "coding", "%d", mncc->cause.coding);
-			add_trace("cause", "location", "%d", mncc->cause.location);
-			add_trace("cause", "value", "%d", mncc->cause.value);
-			add_trace("reason", NULL, "Given lchan not supported");
-			end_trace();
-			send_and_free_mncc(p_g_lcr_gsm, mncc->msg_type, mncc);
-			new_state(PORT_STATE_RELEASE);
-			trigger_work(&p_g_delete);
-			return;
-		}
+		mncc = create_mncc(MNCC_REJ_REQ, callref);
+		gsm_trace_header(p_interface_name, this, MNCC_REJ_REQ, DIRECTION_OUT);
+		mncc->fields |= MNCC_F_CAUSE;
+		mncc->cause.coding = 3;
+		mncc->cause.location = 1;
+		mncc->cause.value = 65;
+		add_trace("cause", "coding", "%d", mncc->cause.coding);
+		add_trace("cause", "location", "%d", mncc->cause.location);
+		add_trace("cause", "value", "%d", mncc->cause.value);
+		add_trace("reason", NULL, "Given lchan not supported");
+		end_trace();
+		send_and_free_mncc(p_g_lcr_gsm, mncc->msg_type, mncc);
+		new_state(PORT_STATE_RELEASE);
+		trigger_work(&p_g_delete);
+		return;
 	}
 #if 0
 	/* if no given payload type is supported, we reject the call */

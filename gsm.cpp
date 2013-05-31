@@ -434,10 +434,6 @@ int Pgsm::audio_send(unsigned char *data, int len)
 	if (p_tap)
 		tap(data, len, 1); // from up
 
-	/* encoder init failed */
-	if (!p_g_fr_encoder)
-		return -EINVAL;
-
 	/* (currently) not connected, so don't flood tch! */
 	if (!p_g_tch_connected)
 		return -EINVAL;
@@ -576,16 +572,23 @@ void Pgsm::modify_lchan(int media_type)
 	case MEDIA_TYPE_GSM_EFR:
 		add_trace("speech", "version", "EFR given");
 		mode->lchan_mode = 0x21; /* GSM V2 */
+		mode->lchan_type = 0x02; /* TCH/F */
 		break;
 	case MEDIA_TYPE_AMR:
 		add_trace("speech", "version", "AMR given");
 		mode->lchan_mode = 0x41; /* GSM V3 */
+		/* as we don't know the available channels, this type will be set by openbsc automatically */
+		mode->lchan_type = 0x02; /* TCH/F */
 		break;
-	default:
-		add_trace("speech", "version", "Full/Half Rate given");
+	case MEDIA_TYPE_GSM_HR:
+		add_trace("speech", "version", "Half Rate given");
 		mode->lchan_mode = 0x01; /* GSM V1 */
+		mode->lchan_type = 0x03; /* TCH/H */
+	default:
+		add_trace("speech", "version", "Full Rate given");
+		mode->lchan_mode = 0x01; /* GSM V1 */
+		mode->lchan_type = 0x02; /* TCH/F */
 	}
-	mode->lchan_type = 0x02; /* FIXME: unused */
 	add_trace("mode", NULL, "0x%02x", mode->lchan_mode);
 	end_trace();
 	send_and_free_mncc(p_g_lcr_gsm, mode->msg_type, mode);
