@@ -768,6 +768,7 @@ void Pgsm_bs::message_setup(unsigned int epoint_id, int message_id, union parame
 	struct epoint_list *epointlist;
 	struct gsm_mncc *mncc;
 	struct interface *interface;
+	int page_with_tchh = 0;
 
 	interface = getinterfacebyname(p_interface_name);
 	if (!interface) {
@@ -817,10 +818,13 @@ void Pgsm_bs::message_setup(unsigned int epoint_id, int message_id, union parame
 		gsm_trace_header(p_interface_name, this, 1 /* codec negotioation */, DIRECTION_NONE);
 		for (i = 0; i < param->setup.rtpinfo.payloads; i++) {
 			switch (param->setup.rtpinfo.media_types[i]) {
-			case MEDIA_TYPE_GSM:
-			case MEDIA_TYPE_GSM_EFR:
 			case MEDIA_TYPE_AMR:
 			case MEDIA_TYPE_GSM_HR:
+				/* because offered codecs are compatible with half rate, we can page with tchh */
+				page_with_tchh = 1;
+				// Fall through!
+			case MEDIA_TYPE_GSM:
+			case MEDIA_TYPE_GSM_EFR:
 				add_trace("rtp", "payload", "%s:%d supported", media_type2name(param->setup.rtpinfo.media_types[i]), param->setup.rtpinfo.payload_types[i]);
 				if (p_g_rtp_payloads < (int)sizeof(p_g_rtp_payload_types)) {
 					p_g_rtp_media_types[p_g_rtp_payloads] = param->setup.rtpinfo.media_types[i];
@@ -845,6 +849,10 @@ void Pgsm_bs::message_setup(unsigned int epoint_id, int message_id, union parame
 			trigger_work(&p_g_delete);
 			return;
 		}
+	} else {
+		/* since we support half rate compatible codecss, we can page with tchh */
+		if (p_g_hr_encoder || p_g_amr_encoder)
+			page_with_tchh = 1;
 	}
 
 //		SCPY(&p_m_tones_dir, param->setup.ext.tones_dir);
@@ -977,7 +985,12 @@ void Pgsm_bs::message_setup(unsigned int epoint_id, int message_id, union parame
 		add_trace("redir", "number", "%s", mncc->redirecting.number);
 	}
 
-	if (interface->gsm_bs_hr) {
+	/* if we support any half rate codec we page the mobile with TCH/H
+	 * support indication. the mobile will reply paging with a channel
+	 * request that indicates half rate support. if no SDCCH and TCH/F
+	 * channel is available, BSC can assign a TCH/H channel, because it
+	 * knows that the phone supports it. */
+	if (page_with_tchh) {
 		add_trace("lchan", "type", "TCH/H or TCH/F");
 		mncc->lchan_type = GSM_LCHAN_TCH_H;
 	} else {
