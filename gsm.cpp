@@ -286,9 +286,6 @@ void Pgsm::frame_receive(void *arg)
 	unsigned char data[160];
 	int i, cmr;
 
-	if (!p_g_fr_decoder)
-		return;
-
 	switch (frame->msg_type) {
 	case GSM_TCHF_FRAME:
 		if (p_g_media_type != MEDIA_TYPE_GSM) {
@@ -1283,7 +1280,7 @@ static int mncc_fd_close(struct lcr_gsm *lcr_gsm, struct lcr_fd *lfd)
 	/* free all the calls that were running through the MNCC interface */
 	port = port_first;
 	while(port) {
-		if ((port->p_type & PORT_CLASS_mISDN_MASK) == PORT_CLASS_GSM) {
+		if ((port->p_type & PORT_CLASS_MASK) == PORT_CLASS_GSM) {
 			pgsm = (class Pgsm *)port;
 			if (pgsm->p_g_lcr_gsm == lcr_gsm) {
 				message = message_create(pgsm->p_serial, ACTIVE_EPOINT(pgsm->p_epointlist), PORT_TO_EPOINT, MESSAGE_RELEASE);
