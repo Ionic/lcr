@@ -1675,6 +1675,13 @@ void Pdss1::facility_ind(unsigned int cmd, unsigned int pid, struct l3_msg *l3m)
 			message->param.threepty.invoke_id = fac.u.inv.invokeId;
 			message_put(message);
 			return;
+
+			case Fac_EctExecute:
+			message = message_create(p_serial, ACTIVE_EPOINT(p_epointlist), PORT_TO_EPOINT, MESSAGE_TRANSFER);
+			message->param.transfer.invoke = 1;
+			message->param.transfer.invoke_id = fac.u.inv.invokeId;
+			message_put(message);
+			return;
 		default:
 			;
 		}
@@ -2348,6 +2355,43 @@ void Pdss1::message_3pty(unsigned int epoint_id, int message_id, union parameter
 	p_m_mISDNport->ml3->to_layer3(p_m_mISDNport->ml3, MT_FACILITY, p_m_d_l3id, l3m);
 }
 
+void Pdss1::enc_ie_facility_ect(l3_msg *l3m, struct param_transfer *transfer)
+{
+	unsigned char fac_ie[256];
+	struct asn1_parm fac;
+
+	/* encode ECT facility */
+	memset(&fac, 0, sizeof(fac));
+	fac.Valid = 1;
+	if (transfer->result) {
+		fac.comp = CompReturnResult;
+		fac.u.retResult.invokeId = transfer->invoke_id;
+		fac.u.retResult.operationValuePresent = 1;
+		fac.u.retResult.operationValue = Fac_EctExecute;
+	}
+	if (transfer->error) {
+		fac.comp = CompReturnError;
+		fac.u.retError.invokeId = transfer->invoke_id;
+		fac.u.retError.errorValue = FacError_Gen_InvalidCallState;
+	}
+	encodeFac(fac_ie, &fac);
+
+	enc_ie_facility(l3m, fac_ie + 2, fac_ie[1]);
+}
+
+/* MESSAGE_TRANSFER */
+void Pdss1::message_transfer(unsigned int epoint_id, int message_id, union parameter *param)
+{
+	l3_msg *l3m;
+
+	/* sending facility */
+	l3m = create_l3msg();
+	l1l2l3_trace_header(p_m_mISDNport, this, L3_FACILITY_REQ, DIRECTION_OUT);
+	enc_ie_facility_ect(l3m, &param->transfer);
+	end_trace();
+	p_m_mISDNport->ml3->to_layer3(p_m_mISDNport->ml3, MT_FACILITY, p_m_d_l3id, l3m);
+}
+
 /* MESSAGE_NOTIFY */
 void Pdss1::message_notify(unsigned int epoint_id, int message_id, union parameter *param)
 {
@@ -2689,6 +2733,10 @@ if (/*	 ||*/ p_state==PORT_STATE_OUT_SETUP) {
 		enc_ie_progress(l3m, 0, (p_m_d_ntmode)?1:5, 8);
 	/* send cause */
 	enc_ie_cause(l3m, (!p_m_mISDNport->locally && param->disconnectinfo.location==LOCATION_PRIVATE_LOCAL)?LOCATION_PRIVATE_REMOTE:param->disconnectinfo.location, param->disconnectinfo.cause);
+	/* send facility */
+	if (param->disconnectinfo.transfer.result) {
+		enc_ie_facility_ect(l3m, &param->disconnectinfo.transfer);
+	}
 	/* send display */
 	if (param->disconnectinfo.display[0])
 		p = param->disconnectinfo.display;
@@ -2857,6 +2905,10 @@ int Pdss1::message_epoint(unsigned int epoint_id, int message_id, union paramete
 
 		case MESSAGE_3PTY: /* begin result message */
 		message_3pty(epoint_id, message_id, param);
+		break;
+
+		case MESSAGE_TRANSFER: /* begin result message */
+		message_transfer(epoint_id, message_id, param);
 		break;
 
 		case MESSAGE_OVERLAP: /* more information is needed */

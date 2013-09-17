@@ -82,7 +82,7 @@ void EndpointAppPBX::action_init_vbox_play(void)
 		SCPY(e_vbox, rparam->string_value);
 	if (e_vbox[0] == '\0') {
 		/* facility rejected */
-		message_disconnect_port(portlist, CAUSE_FACILITYREJECTED, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_FACILITYREJECTED, LOCATION_PRIVATE_LOCAL, "", NULL);
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
 		set_tone(portlist,"cause_22");
 		return;

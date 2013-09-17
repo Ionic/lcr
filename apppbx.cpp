@@ -522,7 +522,7 @@ void EndpointAppPBX::keypad_function(char digit)
 		if ((port->p_type & PORT_CLASS_POTS_MASK) == PORT_CLASS_POTS_FXS)
 			join_join_fxs();
 		else if ((port->p_type & PORT_CLASS_mISDN_MASK) == PORT_CLASS_DSS1)
-			join_join_dss1();
+			join_join_dss1(-1);
 		break;
 
 		/* VOOTP on */
@@ -1317,7 +1317,7 @@ int password_timeout(struct lcr_timer *timer, void *instance, int index)
 		ea->new_state(EPOINT_STATE_OUT_DISCONNECT);
 		portlist = ea->ea_endpoint->ep_portlist;
 		if (portlist) {
-			ea->message_disconnect_port(portlist, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, "");
+			ea->message_disconnect_port(portlist, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, "", NULL);
 			ea->set_tone(portlist, "cause_10");
 		}
 	}
@@ -1424,7 +1424,7 @@ void EndpointAppPBX::port_setup(struct port_list *portlist, int message_type, un
 			trace_header("EXTENSION (not created)", DIRECTION_IN);
 			add_trace("extension", NULL, "%s", e_ext.number);
 			end_trace();
-			message_disconnect_port(portlist, CAUSE_REJECTED, LOCATION_PRIVATE_LOCAL, "");
+			message_disconnect_port(portlist, CAUSE_REJECTED, LOCATION_PRIVATE_LOCAL, "", NULL);
 			new_state(EPOINT_STATE_OUT_DISCONNECT);
 			set_tone(portlist, "cause_80"); /* pbx cause: extension not authorized */
 			e_ext.number[0] = '\0'; /* no terminal */
@@ -1991,7 +1991,7 @@ void EndpointAppPBX::port_connect(struct port_list *portlist, int message_type, 
 		if (!read_extension(&e_ext, e_ext.number)) {
 			/* extension doesn't exist */
 			PDEBUG(DEBUG_EPOINT, "EPOINT(%d) rejecting callback from not existing extension: '%s'\n", ea_endpoint->ep_serial, e_ext.number);
-			message_disconnect_port(portlist, CAUSE_REJECTED, LOCATION_PRIVATE_LOCAL, "");
+			message_disconnect_port(portlist, CAUSE_REJECTED, LOCATION_PRIVATE_LOCAL, "", NULL);
 			new_state(EPOINT_STATE_OUT_DISCONNECT);
 			set_tone(portlist, "cause_80"); /* pbx cause: extension not authorized */
 			return;
@@ -2260,7 +2260,7 @@ void EndpointAppPBX::port_timeout(struct port_list *portlist, int message_type, 
 	SCPY(e_tone, cause);
 	while(portlist) {
 		set_tone(portlist, cause);
-		message_disconnect_port(portlist, param->disconnectinfo.cause, param->disconnectinfo.location, "");
+		message_disconnect_port(portlist, param->disconnectinfo.cause, param->disconnectinfo.location, "", NULL);
 		portlist = portlist->next;
 	}
 	release(RELEASE_JOIN, LOCATION_PRIVATE_LOCAL, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, CAUSE_NORMAL, 0); /* RELEASE_TYPE, join, port */
@@ -2389,14 +2389,25 @@ void EndpointAppPBX::port_transfer(struct port_list *portlist, int message_type,
 	logmessage(message_type, param, portlist->port_id, DIRECTION_IN);
 
 	class Port *port;
+	struct lcr_msg *message;
+	int rc;
 
 	/* bridge for real */
 	if (!(port = find_port_id(portlist->port_id)))
 		return;
 	if ((port->p_type & PORT_CLASS_POTS_MASK) == PORT_CLASS_POTS_FXS)
 		join_join_fxs();
-	else if ((port->p_type & PORT_CLASS_mISDN_MASK) == PORT_CLASS_DSS1)
-		join_join_dss1();
+	else if ((port->p_type & PORT_CLASS_mISDN_MASK) == PORT_CLASS_DSS1) {
+		rc = join_join_dss1(param->transfer.invoke_id);
+
+		if (rc < 0) {
+			message = message_create(ea_endpoint->ep_serial, portlist->port_id, EPOINT_TO_PORT, MESSAGE_TRANSFER);
+			message->param.transfer.error = 1;
+			message->param.transfer.invoke_id = param->transfer.invoke_id;
+			logmessage(message->type, &message->param, portlist->port_id, DIRECTION_OUT);
+			message_put(message);
+		}
+	}
 }
 
 /* port MESSAGE_SUSPEND */
@@ -3020,7 +3031,7 @@ void EndpointAppPBX::join_disconnect_release(int message_type, union parameter *
 	portlist = ea_endpoint->ep_portlist;
 	while(portlist) {
 		set_tone(portlist, cause);
-		message_disconnect_port(portlist, param->disconnectinfo.cause, param->disconnectinfo.location, "");
+		message_disconnect_port(portlist, param->disconnectinfo.cause, param->disconnectinfo.location, "", &param->disconnectinfo.transfer);
 		portlist = portlist->next;
 	}
 }
@@ -3338,7 +3349,9 @@ void EndpointAppPBX::ea_message_join(unsigned int join_id, int message_type, uni
 		case MESSAGE_ALERTING:
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) epoint with terminal '%s' (caller id '%s') received alerting\n", ea_endpoint->ep_serial, e_ext.number, e_callerinfo.id);
 		if (e_state!=EPOINT_STATE_IN_OVERLAP
-		 && e_state!=EPOINT_STATE_IN_PROCEEDING) {
+		 && e_state!=EPOINT_STATE_IN_PROCEEDING
+		 && e_state!=EPOINT_STATE_IN_ALERTING /* second alerting */
+		 && e_state!=EPOINT_STATE_CONNECT) { /* alerting after transfer */
 			PDEBUG(DEBUG_EPOINT, "EPOINT(%d) ignored because we are not in setup or proceeding state.\n", ea_endpoint->ep_serial);
 			break;
 		}
@@ -3553,7 +3566,7 @@ void EndpointAppPBX::pick_join(char *extensions)
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) nobody is ringing internally (or we don't have her in the access list), so we disconnect.\n", ea_endpoint->ep_serial);
 reject:
 		set_tone(ea_endpoint->ep_portlist, "cause_10");
-		message_disconnect_port(ea_endpoint->ep_portlist, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(ea_endpoint->ep_portlist, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, "", NULL);
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
 		return;
 	}
@@ -3691,7 +3704,7 @@ reject:
 
 /* join calls (look for a join that is on hold (same isdn interface/terminal))
  */
-int EndpointAppPBX::join_join_dss1(void)
+int EndpointAppPBX::join_join_dss1(int invoke_id)
 {
 #ifdef WITH_MISDN
 	struct lcr_msg *message;
@@ -3699,7 +3712,7 @@ int EndpointAppPBX::join_join_dss1(void)
 	struct join_relation **add_relation_pointer, **remove_relation_pointer;
 	class Join *our_join, *other_join, *add_join, *remove_join;
 	class JoinPBX *our_joinpbx, *other_joinpbx, *add_joinpbx, *remove_joinpbx;
-	class EndpointAppPBX *other_eapp, *remove_eapp;
+	class EndpointAppPBX *other_eapp, *remove_eapp_hold, *remove_eapp_active;
 	class Port *our_port, *other_port;
 	class Pdss1 *our_pdss1, *other_pdss1;
 	class Endpoint *temp_epoint;
@@ -3793,14 +3806,16 @@ int EndpointAppPBX::join_join_dss1(void)
 	/* now find out which is ACTIVE-IDLE and which is ACTIVE-HELD */
 	if (our_pdss1->p_m_hold && !other_pdss1->p_m_hold) {
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) our relation is on hold and other is active, so we move our relations to other relations\n", ea_endpoint->ep_serial);
-		remove_eapp = this;
+		remove_eapp_hold = this;
+		remove_eapp_active = other_eapp;
 		remove_join = our_join;
 		remove_joinpbx = our_joinpbx;
 		add_join = other_join;
 		add_joinpbx = other_joinpbx;
 	} else {
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) our relation is active or other is on hold, so we move ohter relations to our relations\n", ea_endpoint->ep_serial);
-		remove_eapp = other_eapp;
+		remove_eapp_hold = other_eapp;
+		remove_eapp_active = this;
 		remove_join = other_join;
 		remove_joinpbx = other_joinpbx;
 		add_join = our_join;
@@ -3811,13 +3826,13 @@ int EndpointAppPBX::join_join_dss1(void)
 	remove_relation = remove_joinpbx->j_relation;
 	remove_relation_pointer = &remove_joinpbx->j_relation;
 	while(remove_relation) {
-		if (remove_relation->epoint_id == remove_eapp->ea_endpoint->ep_serial) {
-			/* detach other endpoint */
+		if (remove_relation->epoint_id == remove_eapp_hold->ea_endpoint->ep_serial) {
+			/* detach endpoint on hold */
 			*remove_relation_pointer = remove_relation->next;
 			FREE(remove_relation, sizeof(struct join_relation));
 			cmemuse--;
 			remove_relation = *remove_relation_pointer;
-			remove_eapp->ea_endpoint->ep_join_id = 0;
+			remove_eapp_hold->ea_endpoint->ep_join_id = 0;
 			continue;
 		}
 
@@ -3831,9 +3846,43 @@ int EndpointAppPBX::join_join_dss1(void)
 		remove_relation_pointer = &remove_relation->next;
 		remove_relation = remove_relation->next;
 	}
-	PDEBUG(DEBUG_EPOINT, "EPOINT(%d) endpoint removed, other enpoints on join relinked.\n", ea_endpoint->ep_serial);
+	PDEBUG(DEBUG_EPOINT, "EPOINT(%d) endpoint (hold) removed, other enpoints on join relinked.\n", ea_endpoint->ep_serial);
 
-	/* join call relations */
+	if (invoke_id >= 0) {
+		/* remove relation to endpoint for active join */
+		remove_relation = add_joinpbx->j_relation;
+		remove_relation_pointer = &add_joinpbx->j_relation;
+		while(remove_relation) {
+			if (remove_relation->epoint_id == remove_eapp_active->ea_endpoint->ep_serial) {
+				/* detach active endpoint */
+				*remove_relation_pointer = remove_relation->next;
+				FREE(remove_relation, sizeof(struct join_relation));
+				cmemuse--;
+				remove_relation = *remove_relation_pointer;
+				remove_eapp_active->ea_endpoint->ep_join_id = 0;
+				continue;
+			}
+
+			remove_relation_pointer = &remove_relation->next;
+			remove_relation = remove_relation->next;
+		}
+		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) endpoint (active) removed, other enpoints on join relinked.\n", ea_endpoint->ep_serial);
+
+		/* if active endpoint is in alerting state, send alerting message to join */
+		if (remove_eapp_active->e_state == EPOINT_STATE_IN_ALERTING) {
+			if (add_joinpbx->j_relation && !add_joinpbx->j_relation->next) {
+				/* if channel state indicateds "audio" (1), we tell the other endpoint that patterns are available */
+				if (add_joinpbx->j_relation->channel_state) {
+					message = message_create(add_joinpbx->j_relation->epoint_id, add_join->j_serial, EPOINT_TO_JOIN, MESSAGE_PATTERN);
+					message_put(message);
+				}
+				message = message_create(add_joinpbx->j_relation->epoint_id, add_join->j_serial, EPOINT_TO_JOIN, MESSAGE_ALERTING);
+				message_put(message);
+			}
+		}
+	}
+
+	/* join call relations: we add the members of the join on hold to the active join */
 	add_relation = add_joinpbx->j_relation;
 	add_relation_pointer = &add_joinpbx->j_relation;
 	while(add_relation) {
@@ -3844,12 +3893,32 @@ int EndpointAppPBX::join_join_dss1(void)
 	remove_joinpbx->j_relation = NULL;
 	PDEBUG(DEBUG_EPOINT, "EPOINT(%d) relations joined.\n", ea_endpoint->ep_serial);
 
-	/* release endpoint */
-	message = message_create(remove_joinpbx->j_serial, remove_eapp->ea_endpoint->ep_serial, JOIN_TO_EPOINT, MESSAGE_RELEASE);
+	/* release endpoint on hold */
+	message = message_create(remove_joinpbx->j_serial, remove_eapp_hold->ea_endpoint->ep_serial, JOIN_TO_EPOINT, MESSAGE_RELEASE);
 	message->param.disconnectinfo.cause = CAUSE_NORMAL; /* normal */
 	message->param.disconnectinfo.location = LOCATION_PRIVATE_LOCAL;
+	if (invoke_id >= 0) {
+		/* send the result with disconnect message to the invoking endpoint */
+		if (remove_eapp_hold->ea_endpoint->ep_serial == ea_endpoint->ep_serial) {
+			message->param.disconnectinfo.transfer.result = 1;
+			message->param.disconnectinfo.transfer.invoke_id = invoke_id;
+		}
+	}
 	message_put(message);
 	
+	if (invoke_id >= 0) {
+		/* release active endpoint */
+		message = message_create(add_joinpbx->j_serial, remove_eapp_active->ea_endpoint->ep_serial, JOIN_TO_EPOINT, MESSAGE_RELEASE);
+		message->param.disconnectinfo.cause = CAUSE_NORMAL; /* normal */
+		message->param.disconnectinfo.location = LOCATION_PRIVATE_LOCAL;
+		/* send the result with disconnect message to the invoking endpoint */
+		if (remove_eapp_active->ea_endpoint->ep_serial == ea_endpoint->ep_serial) {
+			message->param.disconnectinfo.transfer.result = 1;
+			message->param.disconnectinfo.transfer.invoke_id = invoke_id;
+		}
+		message_put(message);
+	}
+
 	/* if we are not a partyline, we get partyline state from other join */
 	add_joinpbx->j_partyline += remove_joinpbx->j_partyline; 
 
@@ -4874,6 +4943,13 @@ void EndpointAppPBX::logmessage(int message_type, union parameter *param, unsign
 
 		case MESSAGE_TRANSFER:
 		trace_header("TRANSFER", dir);
+		if (param->transfer.invoke)
+			add_trace("action", NULL, "invoke");
+		if (param->transfer.result)
+			add_trace("action", NULL, "result");
+		if (param->transfer.error)
+			add_trace("action", NULL, "error");
+		add_trace("invoke-id", NULL, "%d", param->transfer.invoke_id);
 		end_trace();
 		break;
 
@@ -4906,7 +4982,7 @@ void EndpointAppPBX::logmessage(int message_type, union parameter *param, unsign
 	}
 }
 
-void EndpointAppPBX::message_disconnect_port(struct port_list *portlist, int cause, int location, const char *display)
+void EndpointAppPBX::message_disconnect_port(struct port_list *portlist, int cause, int location, const char *display, const struct param_transfer *transfer)
 {
 	struct lcr_msg *message;
 
@@ -4929,6 +5005,9 @@ void EndpointAppPBX::message_disconnect_port(struct port_list *portlist, int cau
 			SCPY(message->param.notifyinfo.display, display);
 		else
 			SCPY(message->param.notifyinfo.display, get_isdn_cause(cause, location, e_ext.display_cause));
+	}
+	if (transfer) {
+		memcpy(&message->param.disconnectinfo.transfer, transfer, sizeof(struct param_transfer));
 	}
 	message_put(message);
 	logmessage(message->type, &message->param, portlist->port_id, DIRECTION_OUT);

@@ -112,7 +112,7 @@ void EndpointAppPBX::action_dialing_internal(void)
 		end_trace();
 		release(RELEASE_JOIN, LOCATION_PRIVATE_LOCAL, CAUSE_NORMAL, 0, 0, 0);
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_UNALLOCATED, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_UNALLOCATED, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_86");
 		return;
 	}
@@ -123,7 +123,7 @@ void EndpointAppPBX::action_dialing_internal(void)
 		end_trace();
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
 		release(RELEASE_JOIN, LOCATION_PRIVATE_LOCAL, CAUSE_NORMAL, 0, 0, 0);
-		message_disconnect_port(portlist, CAUSE_REJECTED, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_REJECTED, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_81");
 		return;
 	}
@@ -257,7 +257,7 @@ void EndpointAppPBX::action_dialing_external(void)
 		release(RELEASE_JOIN, LOCATION_PRIVATE_LOCAL, CAUSE_REJECTED, 0, 0, 0);
 		set_tone(portlist, "cause_82");
 		denied:
-		message_disconnect_port(portlist, CAUSE_REJECTED, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_REJECTED, LOCATION_PRIVATE_LOCAL, "", NULL);
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
 		return;
 	}
@@ -324,7 +324,7 @@ void EndpointAppPBX::action_dialing_vbox_record(void)
 		end_trace();
 
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_3f");
 		return;
 	}
@@ -335,7 +335,7 @@ void EndpointAppPBX::action_dialing_vbox_record(void)
 		add_trace("extension", NULL, "%s", rparam->string_value);
 		end_trace();
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_UNALLOCATED, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_UNALLOCATED, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_86");
 		return;
 	}
@@ -345,7 +345,7 @@ void EndpointAppPBX::action_dialing_vbox_record(void)
 		trace_header("ACTION vbox-record (internal calls are denied)", DIRECTION_NONE);
 		end_trace();
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_REJECTED, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_REJECTED, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_81");
 		return;
 	}
@@ -402,7 +402,7 @@ void EndpointAppPBX::action_init_partyline(void)
 		end_trace();
 		noroom:
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_3f");
 		return;
 	}
@@ -500,7 +500,7 @@ void EndpointAppPBX::action_dialing_login(void)
 			end_trace();
 			/* extension doesn't exist */
 			new_state(EPOINT_STATE_OUT_DISCONNECT);
-			message_disconnect_port(portlist, CAUSE_UNALLOCATED, LOCATION_PRIVATE_LOCAL, "");
+			message_disconnect_port(portlist, CAUSE_UNALLOCATED, LOCATION_PRIVATE_LOCAL, "", NULL);
 			set_tone(portlist, "cause_86");
 			return;
 		}
@@ -591,7 +591,7 @@ void EndpointAppPBX::action_init_change_callerid(void)
 		/* service not available */
 		trace_header("ACTION change-callerid (denied for this caller)", DIRECTION_NONE);
 		end_trace();
-		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "", NULL);
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
 		set_tone(portlist,"cause_87");
 		return;
@@ -681,7 +681,7 @@ void EndpointAppPBX::_action_callerid_calleridnext(int next)
 	add_trace("new", "caller id", "%s", numberrize_callerinfo(new_id, new_type, options.national, options.international));
 	add_trace("new", "present", "%s", (new_present==INFO_PRESENT_RESTRICTED)?"restricted":"allowed");
 	end_trace();
-	message_disconnect_port(portlist, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, "");
+	message_disconnect_port(portlist, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, "", NULL);
 	new_state(EPOINT_STATE_OUT_DISCONNECT);
 	set_tone(portlist,"activated");
 }
@@ -712,7 +712,7 @@ void EndpointAppPBX::action_init_change_forward(void)
 		trace_header("ACTION change-forward (denied for this caller)", DIRECTION_NONE);
 		end_trace();
 		/* service not available */		
-		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "", NULL);
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
 		set_tone(portlist,"cause_87");
 		return;
@@ -776,7 +776,7 @@ void EndpointAppPBX::action_dialing_forward(void)
 		write_extension(&e_ext, e_ext.number);
 	}
 	/* function (de)activated */
-	message_disconnect_port(portlist, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, "");
+	message_disconnect_port(portlist, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, "", NULL);
 	new_state(EPOINT_STATE_OUT_DISCONNECT);
 	if (dest[0])
 		set_tone(portlist,"activated");
@@ -796,7 +796,7 @@ void EndpointAppPBX::action_init_redial_reply(void)
 		trace_header("ACTION redial/reply (no last number stored)", DIRECTION_NONE);
 		end_trace();
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_3f");
 		return;
 	}
@@ -910,7 +910,7 @@ void EndpointAppPBX::action_dialing_powerdial(void)
 		trace_header("ACTION powerdial (no last number stored)", DIRECTION_NONE);
 		end_trace();
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_3f");
 		return;
 	}
@@ -976,7 +976,7 @@ void EndpointAppPBX::action_dialing_callback(void)
 		disconnect:
 
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_3f");
 		e_action = NULL;
 		e_cbcaller[0] = e_cbdialing[0] = '\0';
@@ -1076,7 +1076,7 @@ void EndpointAppPBX::action_dialing_abbrev(void)
 		trace_header("ACTION abbreviation (only for extension)", DIRECTION_NONE);
 		end_trace();
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_3f");
 		return;
 	}
@@ -1091,7 +1091,7 @@ void EndpointAppPBX::action_dialing_abbrev(void)
 		add_trace("abbrev", NULL, "%s", abbrev);
 		end_trace();
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_UNALLOCATED, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_UNALLOCATED, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_01");
 		return;
 	}
@@ -1246,7 +1246,7 @@ void EndpointAppPBX::action_dialing_test(void)
 		end_trace();
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
 		SPRINT(causestr,"cause_%02x",cause);
-		message_disconnect_port(portlist, cause, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, cause, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, causestr);
 		break;
 
@@ -1256,7 +1256,7 @@ void EndpointAppPBX::action_dialing_test(void)
 		add_trace("cause", NULL, "16");
 		end_trace();
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "release");
 		break;
 
@@ -1297,7 +1297,7 @@ void EndpointAppPBX::action_init_play(void)
 
 		disconnect:
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_3f");
 		e_action = NULL;
 		return;
@@ -1569,7 +1569,7 @@ void EndpointAppPBX::_action_goto_menu(int mode)
 
 		disconnect:
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_SERVICEUNAVAIL, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_3f");
 		e_action = NULL;
 		return;
@@ -1682,7 +1682,7 @@ void EndpointAppPBX::action_dialing_disconnect(void)
 	new_state(EPOINT_STATE_OUT_DISCONNECT);
 	set_tone(portlist, cause_string);
 	if (!(rparam = routeparam(e_action, PARAM_CONNECT))) {
-		message_disconnect_port(portlist, cause, location, display);
+		message_disconnect_port(portlist, cause, location, display, NULL);
 	} else {
 		message = message_create(ea_endpoint->ep_serial, ea_endpoint->ep_portlist->port_id, EPOINT_TO_PORT, MESSAGE_NOTIFY);
 		SCPY(message->param.notifyinfo.display, display);
@@ -2019,7 +2019,7 @@ void EndpointAppPBX::action_dialing_password(void)
 		e_connectedmode = 0;
 		e_dtmf = 0;
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_10");
 		return;
 	}
@@ -2069,7 +2069,7 @@ void EndpointAppPBX::action_init_pots_retrieve(void)
 
 		disconnect:
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_3f");
 		e_action = NULL;
 		return;
@@ -2138,7 +2138,7 @@ void EndpointAppPBX::action_init_pots_release(void)
 
 		disconnect:
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_3f");
 		e_action = NULL;
 		return;
@@ -2176,7 +2176,7 @@ void EndpointAppPBX::action_init_pots_release(void)
 #if 0
 	/* disconnect our call */
 	new_state(EPOINT_STATE_OUT_DISCONNECT);
-	message_disconnect_port(portlist, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, "");
+	message_disconnect_port(portlist, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, "", NULL);
 	set_tone(portlist, "hangup");
 	e_action = NULL;
 #endif
@@ -2208,7 +2208,7 @@ void EndpointAppPBX::action_init_pots_reject(void)
 		end_trace();
 		disconnect:
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_3f");
 		e_action = NULL;
 		return;
@@ -2259,7 +2259,7 @@ void EndpointAppPBX::action_init_pots_answer(void)
 		end_trace();
 		disconnect:
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_3f");
 		e_action = NULL;
 		return;
@@ -2312,7 +2312,7 @@ void EndpointAppPBX::action_init_pots_3pty(void)
 		end_trace();
 		disconnect:
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_3f");
 		e_action = NULL;
 		return;
@@ -2390,7 +2390,7 @@ void EndpointAppPBX::action_init_pots_transfer(void)
 
 		disconnect:
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_3f");
 		e_action = NULL;
 		return;
@@ -2474,7 +2474,7 @@ void EndpointAppPBX::process_dialing(int timeout)
 		add_trace("max-levels", NULL, "%d", RULE_NESTING);
 		end_trace();
 		new_state(EPOINT_STATE_OUT_DISCONNECT);
-		message_disconnect_port(portlist, CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, "", NULL);
 		set_tone(portlist, "cause_3f");
 		unsched_timer(&e_action_timeout);
 		unsched_timer(&e_match_timeout);
@@ -2501,7 +2501,7 @@ void EndpointAppPBX::process_dialing(int timeout)
 			/* nothing more, so we release */
 			PDEBUG(DEBUG_ROUTE|DEBUG_EPOINT, "EPOINT(%d): action timed out, and we have no next action, so we disconnect.\n", ea_endpoint->ep_serial);
 			new_state(EPOINT_STATE_OUT_DISCONNECT);
-			message_disconnect_port(portlist, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, "");
+			message_disconnect_port(portlist, CAUSE_NORMAL, LOCATION_PRIVATE_LOCAL, "", NULL);
 			set_tone(portlist, "cause_3f");
 			goto end;
 		}
@@ -2530,7 +2530,7 @@ void EndpointAppPBX::process_dialing(int timeout)
 			goto end;
 		}
 		/* invalid dialing */
-		message_disconnect_port(portlist, CAUSE_INCALID, LOCATION_PRIVATE_LOCAL, "");
+		message_disconnect_port(portlist, CAUSE_INCALID, LOCATION_PRIVATE_LOCAL, "", NULL);
 			message = message_create(ea_endpoint->ep_serial, portlist->port_id, EPOINT_TO_PORT, MESSAGE_DISCONNECT);
 			message->param.disconnectinfo.cause = CAUSE_INVALID;
 			message->param.disconnectinfo.location = LOCATION_PRIVATE_LOCAL;

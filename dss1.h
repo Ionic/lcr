@@ -58,6 +58,7 @@ class Pdss1 : public PmISDN
 	void message_notify(unsigned int epoint_id, int message_id, union parameter *param);
 	void message_facility(unsigned int epoint_id, int message_id, union parameter *param);
 	void message_3pty(unsigned int epoint_id, int message_id, union parameter *param);
+	void message_transfer(unsigned int epoint_id, int message_id, union parameter *param);
 	void message_overlap(unsigned int epoint_id, int message_id, union parameter *param);
 	void message_proceeding(unsigned int epoint_id, int message_id, union parameter *param);
 	void message_alerting(unsigned int epoint_id, int message_id, union parameter *param);
@@ -99,6 +100,7 @@ class Pdss1 : public PmISDN
 	void dec_ie_redir_dn(struct l3_msg *l3m, int *type, int *plan, int *present, unsigned char *number, int number_len);
 	void enc_ie_facility(struct l3_msg *l3m, unsigned char *facility, int facility_len);
 	void dec_ie_facility(struct l3_msg *l3m, unsigned char *facility, int *facility_len);
+	void enc_ie_facility_ect(l3_msg *l3m, struct param_transfer *transfer);
 	void dec_facility_centrex(struct l3_msg *l3m, unsigned char *cnip, int cnip_len);
 	void enc_ie_useruser(struct l3_msg *l3m, int protocol, unsigned char *user, int user_len);
 	void dec_ie_useruser(struct l3_msg *l3m, int *protocol, unsigned char *user, int *user_len);
