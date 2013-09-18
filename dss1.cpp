@@ -1359,10 +1359,10 @@ void Pdss1::hold_ind(unsigned int cmd, unsigned int pid, struct l3_msg *l3m)
 	l1l2l3_trace_header(p_m_mISDNport, this, L3_HOLD_IND, DIRECTION_IN);
 	end_trace();
 
-	if (!ACTIVE_EPOINT(p_epointlist) || p_m_hold) {
+	if (!ACTIVE_EPOINT(p_epointlist) || p_hold) {
 		l3m = create_l3msg();
 		l1l2l3_trace_header(p_m_mISDNport, this, L3_HOLD_REJECT_REQ, DIRECTION_OUT);
-		enc_ie_cause(l3m, (p_m_mISDNport->locally)?LOCATION_PRIVATE_LOCAL:LOCATION_PRIVATE_REMOTE, p_m_hold?101:31); /* normal unspecified / incompatible state */
+		enc_ie_cause(l3m, (p_m_mISDNport->locally)?LOCATION_PRIVATE_LOCAL:LOCATION_PRIVATE_REMOTE, p_hold?101:31); /* normal unspecified / incompatible state */
 		add_trace("reason", NULL, "no endpoint");
 		end_trace();
 		p_m_mISDNport->ml3->to_layer3(p_m_mISDNport->ml3, MT_HOLD_REJECT, p_m_d_l3id, l3m);
@@ -1383,7 +1383,7 @@ void Pdss1::hold_ind(unsigned int cmd, unsigned int pid, struct l3_msg *l3m)
 	drop_bchannel();
 
 	/* set hold state */
-	p_m_hold = 1;
+	p_hold = 1;
 #if 0
 	epoint = find_epoint_id(ACTIVE_EPOINT(p_epointlist));
 	if (epoint && p_m_d_ntmode) {
@@ -1411,7 +1411,7 @@ void Pdss1::retrieve_ind(unsigned int cmd, unsigned int pid, struct l3_msg *l3m)
 	dec_ie_channel_id(l3m, &exclusive, &channel);
 	end_trace();
 
-	if (!p_m_hold) {
+	if (!p_hold) {
 		cause = 101; /* incompatible state */
 		reject:
 
@@ -1445,7 +1445,7 @@ void Pdss1::retrieve_ind(unsigned int cmd, unsigned int pid, struct l3_msg *l3m)
 	bchannel_event(p_m_mISDNport, p_m_b_index, B_EVENT_USE);
 
 	/* set hold state */
-	p_m_hold = 0;
+	p_hold = 0;
 	unsched_timer(&p_m_timeout);
 
 	/* acknowledge retrieve */

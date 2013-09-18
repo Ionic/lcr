@@ -130,7 +130,6 @@ PmISDN::PmISDN(int type, mISDNport *mISDNport, char *portname, struct port_setti
 	p_m_b_exclusive = 0;
 	p_m_b_reserve = 0;
 	p_m_b_mode = mode;
-	p_m_hold = 0;
 	p_m_tx_gain = mISDNport->ifport->interface->tx_gain;
 	p_m_rx_gain = mISDNport->ifport->interface->rx_gain;
 	p_m_conf = 0;

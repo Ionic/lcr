@@ -1118,7 +1118,7 @@ int admin_state(struct admin_queue **responsep)
 			response->am[num].u.p.isdn = 1;
 			pdss1 = (class Pdss1 *)port;
 			response->am[num].u.p.isdn_chan = pdss1->p_m_b_channel;
-			response->am[num].u.p.isdn_hold = pdss1->p_m_hold;
+			response->am[num].u.p.isdn_hold = pdss1->p_hold;
 			response->am[num].u.p.isdn_ces = pdss1->p_m_d_ces;
 		}
 #endif

@@ -297,8 +297,8 @@ no_channel:
 		PDEBUG(DEBUG_ISDN, "Pfxs(%s) bchannel is already active\n", p_name);
 	}
 
-	if (p_m_hold) {
-		p_m_hold = 0;
+	if (p_hold) {
+		p_hold = 0;
 		message = message_create(p_serial, ACTIVE_EPOINT(p_epointlist), PORT_TO_EPOINT, MESSAGE_NOTIFY);
 		message->param.notifyinfo.notify = INFO_NOTIFY_REMOTE_RETRIEVAL;
 		message->param.notifyinfo.local = 1; /* call is held by supplementary service */
@@ -326,7 +326,7 @@ void Pfxs::hold_ind(unsigned int cont)
 	drop_bchannel();
 	PDEBUG(DEBUG_ISDN, "Pfxs(%s) drop bchannel\n", p_name);
 
-	p_m_hold = 1;
+	p_hold = 1;
 }
 
 void Pfxs::retrieve_ind(unsigned int cont)
@@ -398,7 +398,7 @@ no_channel:
 		PDEBUG(DEBUG_ISDN, "Pfxs(%s) bchannel is already active\n", p_name);
 	}
 
-	p_m_hold = 0;
+	p_hold = 0;
 	message = message_create(p_serial, ACTIVE_EPOINT(p_epointlist), PORT_TO_EPOINT, MESSAGE_NOTIFY);
 	message->param.notifyinfo.notify = INFO_NOTIFY_REMOTE_RETRIEVAL;
 	message->param.notifyinfo.local = 1; /* call is held by supplementary service */
@@ -481,7 +481,7 @@ void Pfxs::message_setup(unsigned int epoint_id, int message_id, union parameter
 			if (pots->p_m_mISDNport == p_m_mISDNport) {
 				if (pots != this)
 					any_call = 1;
-				if (pots->p_state == PORT_STATE_CONNECT && !pots->p_m_hold)
+				if (pots->p_state == PORT_STATE_CONNECT && !pots->p_hold)
 					break; // found
 			}
 		}
@@ -574,7 +574,7 @@ void Pfxs::message_release(unsigned int epoint_id, int message_id, union paramet
 		trigger_work(&p_m_fxs_delete);
 	}
 	if (p_state == PORT_STATE_CONNECT) {
-		if (!p_m_hold)
+		if (!p_hold)
 			set_tone("", "release");
 		else
 			trigger_work(&p_m_fxs_delete);
@@ -728,7 +728,7 @@ setup:
 				if ((port->p_type & PORT_CLASS_POTS_MASK) == PORT_CLASS_POTS_FXS) {
 					pots = (class Pfxs *)port;
 					if (pots->p_m_mISDNport == mISDNport) {
-						if (pots->p_state == PORT_STATE_CONNECT && pots->p_m_hold) {
+						if (pots->p_state == PORT_STATE_CONNECT && pots->p_hold) {
 							if (pots->p_m_fxs_age > latest) {
 								latest = pots->p_m_fxs_age;
 								latest_pots = pots;
@@ -745,7 +745,7 @@ setup:
 				if ((port->p_type & PORT_CLASS_POTS_MASK) == PORT_CLASS_POTS_FXS) {
 					pots = (class Pfxs *)port;
 					if (pots->p_m_mISDNport == mISDNport) {
-						if ((pots->p_state != PORT_STATE_CONNECT || !pots->p_m_hold) && pots != alerting_pots) {
+						if ((pots->p_state != PORT_STATE_CONNECT || !pots->p_hold) && pots != alerting_pots) {
 							PDEBUG(DEBUG_ISDN, "Pfxs(%s) release because pots-ring-after-hangup set and call not on hold / alerting\n", pots->p_name);
 							pots->hangup_ind(cont);
 						}
@@ -792,7 +792,7 @@ flash:
 				pots = (class Pfxs *)port;
 				if (pots->p_m_mISDNport == mISDNport) {
 				 	if (pots->p_state == PORT_STATE_CONNECT) {
-						if (pots->p_m_hold) {
+						if (pots->p_hold) {
 							if (pots->p_m_fxs_age > latest) {
 								latest = pots->p_m_fxs_age;
 								latest_pots = pots;

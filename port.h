@@ -236,6 +236,7 @@ class Port
 	void bridge(unsigned int bridge_id);	/* join a bridge */
 	int bridge_tx(unsigned char *data, int len); /* used to transmit data to remote port */
 	virtual int bridge_rx(unsigned char *data, int len); /* function to be inherited, so data is received */
+	int p_hold;				/* if port is on hold */
 
 	/* state */
 	int p_state;				/* state of port */

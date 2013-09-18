@@ -3804,7 +3804,7 @@ int EndpointAppPBX::join_join_dss1(int invoke_id)
 	}
 
 	/* now find out which is ACTIVE-IDLE and which is ACTIVE-HELD */
-	if (our_pdss1->p_m_hold && !other_pdss1->p_m_hold) {
+	if (our_port->p_hold && !other_port->p_hold) {
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) our relation is on hold and other is active, so we move our relations to other relations\n", ea_endpoint->ep_serial);
 		remove_eapp_hold = this;
 		remove_eapp_active = other_eapp;
@@ -3999,8 +3999,8 @@ int EndpointAppPBX::join_join_fxs(void)
 				if (other_port->p_type==PORT_TYPE_POTS_FXS_OUT
 				 || other_port->p_type==PORT_TYPE_POTS_FXS_IN) { /* port is FXS */
 					other_fxs = (class Pfxs *)other_port;
-					PDEBUG(DEBUG_EPOINT, "EPOINT(%d) comparing other endpoint's port is of type isdn! comparing our portnum=%d with other's portnum=%d hold=%s state=%d\n", ea_endpoint->ep_serial, our_fxs->p_m_mISDNport->portnum, other_fxs->p_m_mISDNport->portnum, (other_fxs->p_m_hold)?"YES":"NO", other_fxs->p_state);
-					if (1 //other_fxs->p_m_hold /* port is on hold */
+					PDEBUG(DEBUG_EPOINT, "EPOINT(%d) comparing other endpoint's port is of type isdn! comparing our portnum=%d with other's portnum=%d hold=%s state=%d\n", ea_endpoint->ep_serial, our_fxs->p_m_mISDNport->portnum, other_fxs->p_m_mISDNport->portnum, (other_fxs->p_hold)?"YES":"NO", other_fxs->p_state);
+					if (1 //other_fxs->p_hold /* port is on hold */
 					 && other_fxs->p_m_mISDNport == our_fxs->p_m_mISDNport) /* same isdn interface */
 						break;
 				} else {
@@ -4039,7 +4039,7 @@ int EndpointAppPBX::join_join_fxs(void)
 	}
 
 	/* now find out which is ACTIVE-IDLE and which is ACTIVE-HELD */
-	if (our_fxs->p_m_hold && !other_fxs->p_m_hold) {
+	if (our_port->p_hold && !other_port->p_hold) {
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) our relation is on hold and other is active, so we move our relations to other relations\n", ea_endpoint->ep_serial);
 		remove_eapp = this;
 		remove_join = our_join;
@@ -4293,8 +4293,8 @@ int EndpointAppPBX::join_3pty_fxs(void)
 				if (other_port->p_type==PORT_TYPE_POTS_FXS_OUT
 				 || other_port->p_type==PORT_TYPE_POTS_FXS_IN) { /* port is isdn nt-mode */
 					other_fxs = (class Pfxs *)other_port;
-					PDEBUG(DEBUG_EPOINT, "EPOINT(%d) comparing other endpoint's port is of type FXS! comparing our portnum=%d with other's portnum=%d hold=%s state=%d\n", ea_endpoint->ep_serial, our_fxs->p_m_mISDNport->portnum, other_fxs->p_m_mISDNport->portnum, (other_fxs->p_m_hold)?"YES":"NO", other_fxs->p_state);
-					if (1 //other_fxs->p_m_hold /* port is on hold */
+					PDEBUG(DEBUG_EPOINT, "EPOINT(%d) comparing other endpoint's port is of type FXS! comparing our portnum=%d with other's portnum=%d hold=%s state=%d\n", ea_endpoint->ep_serial, our_fxs->p_m_mISDNport->portnum, other_fxs->p_m_mISDNport->portnum, (other_fxs->p_hold)?"YES":"NO", other_fxs->p_state);
+					if (1 //other_fxs->p_hold /* port is on hold */
 					 && other_fxs->p_m_mISDNport == our_fxs->p_m_mISDNport) /* same pots interface */
 						break;
 				} else {

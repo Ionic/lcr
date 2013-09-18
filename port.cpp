@@ -176,6 +176,7 @@ Port::Port(int type, const char *portname, struct port_settings *settings, struc
 	memset(&p_capainfo, 0, sizeof(p_capainfo));
 	p_echotest = 0;
 	p_bridge = 0;
+	p_hold = 0;
 
 	/* call recording */
 	p_record = NULL;
