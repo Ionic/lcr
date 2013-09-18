@@ -158,7 +158,6 @@ class PmISDN : public Port
 	int p_m_b_exclusive;			/* if bchannel is exclusive */
 	int p_m_b_reserve;			/* set if channel is reserved */
 	int p_m_b_mode;				/* bchannel mode */
-	int p_m_hold;				/* if port is on hold */
 	struct lcr_timer p_m_timeout;		/* timeout of timers */
 
 	int p_m_inband_send_on;			/* triggers optional send function */
