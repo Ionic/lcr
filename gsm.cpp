@@ -838,6 +838,9 @@ void Pgsm::message_notify(unsigned int epoint_id, int message_id, union paramete
 //	printf("if = %d\n", param->notifyinfo.notify);
 	if (param->notifyinfo.notify>INFO_NOTIFY_NONE) {
 		notify = param->notifyinfo.notify & 0x7f;
+		/* skip all notifiy ids that are not 0, 1, 2 */
+		if (notify > 2)
+			return;
 		if (p_state!=PORT_STATE_CONNECT /*&& p_state!=PORT_STATE_IN_PROCEEDING*/ && p_state!=PORT_STATE_IN_ALERTING) {
 			/* queue notification */
 			if (p_g_notify_pending)
