@@ -1596,6 +1596,14 @@ void EndpointAppPBX::_action_goto_menu(int mode)
 				SCPY(e_dialinginfo.id, e_extdialing);
 			e_extdialing = e_dialinginfo.id;
 		}
+		/* add prefix */
+		if ((rparam = routeparam(e_action, PARAM_PREFIX))) {
+			char extdialing[256];
+			SCPY(extdialing, e_extdialing);
+			SPRINT(e_dialinginfo.id, "%s%s", rparam->string_value, extdialing);
+			e_extdialing = e_dialinginfo.id;
+		}
+
 	}
 
 	/* play sample */

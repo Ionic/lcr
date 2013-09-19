@@ -106,6 +106,12 @@ int Premote::message_epoint(unsigned int epoint_id, int message_type, union para
 	case MESSAGE_CONNECT:
 		memcpy(&p_connectinfo, &param->connectinfo, sizeof(p_connectinfo));
 		new_state(PORT_STATE_CONNECT);
+		{
+			union parameter newparam;
+			memset(&newparam, 0, sizeof(union parameter));
+			param->traffic.len = 160;
+			admin_message_from_lcr(p_r_remote_id, p_r_ref, MESSAGE_TRAFFIC, param);
+		}
 		break;
 
 	case MESSAGE_DISCONNECT:
@@ -211,6 +217,12 @@ void Premote::message_remote(int message_type, union parameter *param)
 	case MESSAGE_CONNECT:
 		memcpy(&p_connectinfo, &param->connectinfo, sizeof(p_connectinfo));
 		new_state(PORT_STATE_CONNECT);
+		{
+			union parameter newparam;
+			memset(&newparam, 0, sizeof(union parameter));
+			param->traffic.len = 160;
+			admin_message_from_lcr(p_r_remote_id, p_r_ref, MESSAGE_TRAFFIC, param);
+		}
 		break;
 
 	case MESSAGE_DISCONNECT:

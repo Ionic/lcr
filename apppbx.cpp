@@ -5007,6 +5007,11 @@ void EndpointAppPBX::logmessage(int message_type, union parameter *param, unsign
 		end_trace();
 		break;
 
+		case MESSAGE_ENABLEKEYPAD:
+		trace_header("ENABLEKEYPAD", dir);
+		end_trace();
+		break;
+
 		default:
 		PERROR("EPOINT(%d) message not of correct type (%d)\n", ea_endpoint->ep_serial, message_type);
 	}
