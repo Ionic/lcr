@@ -2397,7 +2397,8 @@ void EndpointAppPBX::port_transfer(struct port_list *portlist, int message_type,
 		return;
 	if ((port->p_type & PORT_CLASS_POTS_MASK) == PORT_CLASS_POTS_FXS)
 		join_join_fxs();
-	else if ((port->p_type & PORT_CLASS_mISDN_MASK) == PORT_CLASS_DSS1) {
+	else if ((port->p_type & PORT_CLASS_mISDN_MASK) == PORT_CLASS_DSS1
+	      || (port->p_type & PORT_CLASS_GSM_MASK) == PORT_CLASS_GSM_BS) {
 		rc = join_join_dss1(param->transfer.invoke_id);
 
 		if (rc < 0) {
@@ -3702,11 +3703,10 @@ reject:
 }
 
 
-/* join calls (look for a join that is on hold (same isdn interface/terminal))
+/* join calls (look for a join that is on hold (same isdn/gsm interface/terminal))
  */
 int EndpointAppPBX::join_join_dss1(int invoke_id)
 {
-#ifdef WITH_MISDN
 	struct lcr_msg *message;
 	struct join_relation *add_relation, *remove_relation;
 	struct join_relation **add_relation_pointer, **remove_relation_pointer;
@@ -3714,7 +3714,12 @@ int EndpointAppPBX::join_join_dss1(int invoke_id)
 	class JoinPBX *our_joinpbx, *other_joinpbx, *add_joinpbx, *remove_joinpbx;
 	class EndpointAppPBX *other_eapp, *remove_eapp_hold, *remove_eapp_active;
 	class Port *our_port, *other_port;
-	class Pdss1 *our_pdss1, *other_pdss1;
+#ifdef WITH_MISDN
+	class Pdss1 *our_pdss1 = NULL, *other_pdss1;
+#endif
+#ifdef WITH_GSM_BS
+	class Pgsm_bs *our_gsm_bs = NULL, *other_gsm_bs;
+#endif
 	class Endpoint *temp_epoint;
 
 	/* are we a candidate to join a join? */
@@ -3732,20 +3737,19 @@ int EndpointAppPBX::join_join_dss1(int invoke_id)
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot join: we have no port.\n", ea_endpoint->ep_serial);
 		return -1;
 	}
-	if (!e_ext.number[0]) {
-		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot join: we are not internal extension.\n", ea_endpoint->ep_serial);
-		return -1;
-	}
 	our_port = find_port_id(ea_endpoint->ep_portlist->port_id);
 	if (!our_port) {
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot join: our port doesn't exist anymore.\n", ea_endpoint->ep_serial);
 		return -1;
 	}
-	if ((our_port->p_type & PORT_CLASS_mISDN_MASK) != PORT_CLASS_DSS1) {
-		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot join: our port is not isdn.\n", ea_endpoint->ep_serial);
-		return -1;
-	}
-	our_pdss1 = (class Pdss1 *)our_port;
+#ifdef WITH_MISDN
+	if ((our_port->p_type & PORT_CLASS_mISDN_MASK) == PORT_CLASS_DSS1)
+		our_pdss1 = (class Pdss1 *)our_port;
+#endif
+#ifdef WITH_GSM_BS
+	if ((our_port->p_type & PORT_CLASS_GSM_MASK) == PORT_CLASS_GSM_BS)
+		our_gsm_bs = (class Pgsm_bs *)our_port;
+#endif
 
 	/* find an endpoint that has the same mISDNport/ces that we are on */
 	other_eapp = apppbx_first;
@@ -3755,20 +3759,33 @@ int EndpointAppPBX::join_join_dss1(int invoke_id)
 			continue;
 		}
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) comparing other endpoint candiate: (ep%d) terminal='%s' port=%s join=%d.\n", ea_endpoint->ep_serial, other_eapp->ea_endpoint->ep_serial, other_eapp->e_ext.number, (other_eapp->ea_endpoint->ep_portlist)?"YES":"NO", other_eapp->ea_endpoint->ep_join_id);
-		if (other_eapp->e_ext.number[0] /* has terminal */
-		 && other_eapp->ea_endpoint->ep_portlist /* has port */
+		if (other_eapp->ea_endpoint->ep_portlist /* has port */
 		 && other_eapp->ea_endpoint->ep_join_id) { /* has join */
 			other_port = find_port_id(other_eapp->ea_endpoint->ep_portlist->port_id);
 			if (other_port) { /* port still exists */
-				if (other_port->p_type==PORT_TYPE_DSS1_NT_OUT
-				 || other_port->p_type==PORT_TYPE_DSS1_NT_IN) { /* port is isdn nt-mode */
+#ifdef WITH_MISDN
+				if (our_pdss1
+				 && (other_port->p_type==PORT_TYPE_DSS1_NT_OUT
+				  || other_port->p_type==PORT_TYPE_DSS1_NT_IN)) { /* port is isdn nt-mode */
 					other_pdss1 = (class Pdss1 *)other_port;
-					PDEBUG(DEBUG_EPOINT, "EPOINT(%d) comparing other endpoint's port is of type isdn! comparing our portnum=%d with other's portnum=%d hold=%s ces=%d\n", ea_endpoint->ep_serial, our_pdss1->p_m_mISDNport->portnum, other_pdss1->p_m_mISDNport->portnum, (other_pdss1->p_m_hold)?"YES":"NO", other_pdss1->p_m_d_ces);
-					if (1 //other_pdss1->p_m_hold /* port is on hold */
+					PDEBUG(DEBUG_EPOINT, "EPOINT(%d) comparing other endpoint's port is of type isdn! comparing our portnum=%d with other's portnum=%d hold=%s ces=%d\n", ea_endpoint->ep_serial, our_pdss1->p_m_mISDNport->portnum, other_pdss1->p_m_mISDNport->portnum, (other_pdss1->p_hold)?"YES":"NO", other_pdss1->p_m_d_ces);
+					if (1 //other_pdss1->p_hold /* port is on hold */
 					 && other_pdss1->p_m_mISDNport == our_pdss1->p_m_mISDNport /* same isdn interface */
 					 && other_pdss1->p_m_d_ces == our_pdss1->p_m_d_ces) /* same tei+sapi */
 						break;
-				} else {
+				} else
+#endif
+#ifdef WITH_GSM_BS
+				if (our_gsm_bs
+				 && (other_port->p_type==PORT_TYPE_GSM_BS_OUT
+				  || other_port->p_type==PORT_TYPE_GSM_BS_IN)) { /* port is GSM bs-mode */
+					other_gsm_bs = (class Pgsm_bs *)other_port;
+					PDEBUG(DEBUG_EPOINT, "EPOINT(%d) comparing other endpoint's port is of type GSM! comparing our imsi with other imsi=%s\n", ea_endpoint->ep_serial, our_gsm_bs->p_g_imsi, other_gsm_bs->p_g_imsi);
+					if (!strcmp(other_gsm_bs->p_g_imsi, our_gsm_bs->p_g_imsi)) /* same tei+sapi */
+						break;
+				} else
+#endif
+				{
 					PDEBUG(DEBUG_EPOINT, "EPOINT(%d) comparing other endpoint's port is of other type!\n", ea_endpoint->ep_serial);
 				}
 			} else {
@@ -3931,9 +3948,6 @@ int EndpointAppPBX::join_join_dss1(int invoke_id)
 
 	/* we send a retrieve to that endpoint */
 	// mixer will update the hold-state of the join and send it to the endpoints is changes
-#else
-	PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot join: no mISDN support anyway.\n", ea_endpoint->ep_serial);
-#endif
 
 	return 0;
 }
@@ -4110,21 +4124,28 @@ int EndpointAppPBX::join_join_fxs(void)
 
 	/* we send a retrieve to that endpoint */
 	// mixer will update the hold-state of the join and send it to the endpoints is changes
-#else
-	PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot join: no mISDN support anyway.\n", ea_endpoint->ep_serial);
-#endif
 
 	return 0;
+#else
+	PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot join: no mISDN support anyway.\n", ea_endpoint->ep_serial);
+
+	return -1;
+#endif
 }
 
+/* do audio bridge of endpoints on same isdn/gsm terminal */
 int EndpointAppPBX::join_3pty_dss1(void)
 {
-#ifdef WITH_MISDN
 	class Join *our_join, *other_join;
 	class JoinPBX *our_joinpbx, *other_joinpbx;
 	class EndpointAppPBX *other_eapp;
 	class Port *our_port, *other_port;
-	class Pdss1 *our_pdss1, *other_pdss1;
+#ifdef WITH_MISDN
+	class Pdss1 *our_pdss1 = NULL, *other_pdss1;
+#endif
+#ifdef WITH_GSM_BS
+	class Pgsm_bs *our_gsm_bs = NULL, *other_gsm_bs;
+#endif
 
 	/* are we a candidate to join a join? */
 	our_join = find_join_id(ea_endpoint->ep_join_id);
@@ -4141,20 +4162,19 @@ int EndpointAppPBX::join_3pty_dss1(void)
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot join: we have no port.\n", ea_endpoint->ep_serial);
 		return -1;
 	}
-	if (!e_ext.number[0]) {
-		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot join: we are not internal extension.\n", ea_endpoint->ep_serial);
-		return -1;
-	}
 	our_port = find_port_id(ea_endpoint->ep_portlist->port_id);
 	if (!our_port) {
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot join: our port doesn't exist anymore.\n", ea_endpoint->ep_serial);
 		return -1;
 	}
-	if ((our_port->p_type & PORT_CLASS_mISDN_MASK) != PORT_CLASS_DSS1) {
-		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot join: our port is not isdn.\n", ea_endpoint->ep_serial);
-		return -1;
-	}
-	our_pdss1 = (class Pdss1 *)our_port;
+#ifdef WITH_MISDN
+	if ((our_port->p_type & PORT_CLASS_mISDN_MASK) == PORT_CLASS_DSS1)
+		our_pdss1 = (class Pdss1 *)our_port;
+#endif
+#ifdef WITH_GSM_BS
+	if ((our_port->p_type & PORT_CLASS_GSM_MASK) == PORT_CLASS_GSM_BS)
+		our_gsm_bs = (class Pgsm_bs *)our_port;
+#endif
 
 	/* find an endpoint that has the same mISDNport/ces that we are on */
 	other_eapp = apppbx_first;
@@ -4164,20 +4184,33 @@ int EndpointAppPBX::join_3pty_dss1(void)
 			continue;
 		}
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) comparing other endpoint candiate: (ep%d) terminal='%s' port=%s join=%d.\n", ea_endpoint->ep_serial, other_eapp->ea_endpoint->ep_serial, other_eapp->e_ext.number, (other_eapp->ea_endpoint->ep_portlist)?"YES":"NO", other_eapp->ea_endpoint->ep_join_id);
-		if (other_eapp->e_ext.number[0] /* has terminal */
-		 && other_eapp->ea_endpoint->ep_portlist /* has port */
+		if (other_eapp->ea_endpoint->ep_portlist /* has port */
 		 && other_eapp->ea_endpoint->ep_join_id) { /* has join */
 			other_port = find_port_id(other_eapp->ea_endpoint->ep_portlist->port_id);
 			if (other_port) { /* port still exists */
-				if (other_port->p_type==PORT_TYPE_DSS1_NT_OUT
-				 || other_port->p_type==PORT_TYPE_DSS1_NT_IN) { /* port is isdn nt-mode */
+#ifdef WITH_MISDN
+				if (our_pdss1
+				 && (other_port->p_type==PORT_TYPE_DSS1_NT_OUT
+				  || other_port->p_type==PORT_TYPE_DSS1_NT_IN)) { /* port is isdn nt-mode */
 					other_pdss1 = (class Pdss1 *)other_port;
-					PDEBUG(DEBUG_EPOINT, "EPOINT(%d) comparing other endpoint's port is of type isdn! comparing our portnum=%d with other's portnum=%d hold=%s ces=%d\n", ea_endpoint->ep_serial, our_pdss1->p_m_mISDNport->portnum, other_pdss1->p_m_mISDNport->portnum, (other_pdss1->p_m_hold)?"YES":"NO", other_pdss1->p_m_d_ces);
-					if (1 //other_pdss1->p_m_hold /* port is on hold */
+					PDEBUG(DEBUG_EPOINT, "EPOINT(%d) comparing other endpoint's port is of type isdn! comparing our portnum=%d with other's portnum=%d hold=%s ces=%d\n", ea_endpoint->ep_serial, our_pdss1->p_m_mISDNport->portnum, other_pdss1->p_m_mISDNport->portnum, (other_pdss1->p_hold)?"YES":"NO", other_pdss1->p_m_d_ces);
+					if (1 //other_pdss1->p_hold /* port is on hold */
 					 && other_pdss1->p_m_mISDNport == our_pdss1->p_m_mISDNport /* same isdn interface */
 					 && other_pdss1->p_m_d_ces == our_pdss1->p_m_d_ces) /* same tei+sapi */
 						break;
-				} else {
+				} else
+#endif
+#ifdef WITH_GSM_BS
+				if (our_gsm_bs
+				 && (other_port->p_type==PORT_TYPE_GSM_BS_OUT
+				  || other_port->p_type==PORT_TYPE_GSM_BS_IN)) { /* port is GSM bs-mode */
+					other_gsm_bs = (class Pgsm_bs *)other_port;
+					PDEBUG(DEBUG_EPOINT, "EPOINT(%d) comparing other endpoint's port is of type GSM! comparing our imsi with other imsi=%s\n", ea_endpoint->ep_serial, our_gsm_bs->p_g_imsi, other_gsm_bs->p_g_imsi);
+					if (!strcmp(other_gsm_bs->p_g_imsi, our_gsm_bs->p_g_imsi)) /* same tei+sapi */
+						break;
+				} else
+#endif
+				{
 					PDEBUG(DEBUG_EPOINT, "EPOINT(%d) comparing other endpoint's port is of other type!\n", ea_endpoint->ep_serial);
 				}
 			} else {
@@ -4187,7 +4220,7 @@ int EndpointAppPBX::join_3pty_dss1(void)
 		other_eapp = other_eapp->next;
 	}
 	if (!other_eapp) {
-		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot join: no other endpoint on same isdn terminal.\n", ea_endpoint->ep_serial);
+		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot join: no other endpoint on same terminal.\n", ea_endpoint->ep_serial);
 		return -1;
 	}
 	PDEBUG(DEBUG_EPOINT, "EPOINT(%d) port with same terminal found.\n", ea_endpoint->ep_serial);
@@ -4231,13 +4264,11 @@ int EndpointAppPBX::join_3pty_dss1(void)
 
 	/* we send a retrieve to that endpoint */
 	// mixer will update the hold-state of the join and send it to the endpoints is changes
-#else
-	PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot join: no mISDN support anyway.\n", ea_endpoint->ep_serial);
-#endif
 
 	return 0;
 }
 
+/* do audio bridge of endpoints on same fxs terminal */
 int EndpointAppPBX::join_3pty_fxs(void)
 {
 #ifdef WITH_MISDN
@@ -4351,16 +4382,18 @@ int EndpointAppPBX::join_3pty_fxs(void)
 
 	/* we send a retrieve to that endpoint */
 	// mixer will update the hold-state of the join and send it to the endpoints is changes
-#else
-	PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot join: no mISDN support anyway.\n", ea_endpoint->ep_serial);
-#endif
 
 	return 0;
+#else
+	PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot join: no mISDN support anyway.\n", ea_endpoint->ep_serial);
+
+	return -1;
+#endif
 }
 
+/* split audio bridge */
 int EndpointAppPBX::split_3pty(void)
 {
-#ifdef WITH_MISDN
 	class Join *our_join, *other_join;
 	class JoinPBX *our_joinpbx, *other_joinpbx;
 
@@ -4401,9 +4434,6 @@ int EndpointAppPBX::split_3pty(void)
 
 	/* we send a retrieve to that endpoint */
 	// mixer will update the hold-state of the join and send it to the endpoints is changes
-#else
-	PDEBUG(DEBUG_EPOINT, "EPOINT(%d) cannot split: no mISDN support anyway.\n", ea_endpoint->ep_serial);
-#endif
 
 	return 0;
 }

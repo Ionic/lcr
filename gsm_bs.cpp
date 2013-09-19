@@ -14,6 +14,9 @@
 
 struct lcr_gsm *gsm_bs = NULL;
 
+// use holdMPTY to transfer call
+#define TRANSFER_HACK
+
 #define PAYLOAD_TYPE_GSM 3
 
 /*
@@ -97,6 +100,8 @@ void Pgsm_bs::call_conf_ind(unsigned int msg_type, unsigned int callref, struct 
 		add_trace("cause", "value", "%", mncc->cause.value);
 	}
 	end_trace();
+
+	SCPY(p_g_imsi, mncc->imsi);
 
 	new_state(PORT_STATE_OUT_PROCEEDING);
 
@@ -271,6 +276,8 @@ void Pgsm_bs::hold_ind(unsigned int msg_type, unsigned int callref, struct gsm_m
 	message->param.notifyinfo.local = 1; /* call is held by supplementary service */
 	message_put(message);
 
+	p_hold = 1;
+
 	/* acknowledge hold */
 	gsm_trace_header(p_interface_name, this, MNCC_HOLD_CNF, DIRECTION_OUT);
 	end_trace();
@@ -302,6 +309,8 @@ void Pgsm_bs::retr_ind(unsigned int msg_type, unsigned int callref, struct gsm_m
 	message->param.notifyinfo.notify = INFO_NOTIFY_REMOTE_RETRIEVAL;
 	message->param.notifyinfo.local = 1; /* call is retrieved by supplementary service */
 	message_put(message);
+
+	p_hold = 0;
 
 	/* acknowledge retr */
 	gsm_trace_header(p_interface_name, this, MNCC_RETRIEVE_CNF, DIRECTION_OUT);
@@ -411,6 +420,248 @@ void Pgsm_bs::select_payload_type(struct gsm_mncc *mncc, unsigned char *payload_
 	end_trace();
 }
 
+void gsm_trace_facility(unsigned char *fac_ie, unsigned char fac_len)
+{
+	char debug[GSM_MAX_FACILITY * 3 + 1];
+	int i;
+
+	i = 0;
+	while(i < fac_len) {
+		UPRINT(debug+(i*3), " %02x", fac_ie[i]);
+		i++;
+	}
+	debug[i*3] = '\0';
+	add_trace("facility", NULL, "%s", debug[0]?debug+1:"<none>");
+}
+
+/* encode facility IE */
+void Pgsm_bs::enc_ie_facility(struct gsm_mncc *mncc, int operation_code, int error_code, unsigned char invoke_id)
+{
+	unsigned char *fac_ie, fac_len;
+
+	fac_ie = (unsigned char *)mncc->facility.info;
+
+	mncc->fields |= MNCC_F_FACILITY;
+	if (operation_code >= 0) {
+		fac_len = 8;
+		fac_ie[0] = 0xa2;
+		fac_ie[1] = 6;
+		fac_ie[2] = 0x02; /* invoke ID */
+		fac_ie[3] = 1;
+		fac_ie[4] = invoke_id;
+		fac_ie[5] = 0x02; /* Operation Code */
+		fac_ie[6] = 1;
+		fac_ie[7] = 124; /* buildMPTY */
+		fac_ie[7] = operation_code;
+	}
+	if (error_code >= 0) {
+		fac_len = 8;
+		fac_ie[0] = 0xa3;
+		fac_ie[1] = 6;
+		fac_ie[2] = 0x02; /* invoke ID */
+		fac_ie[3] = 1;
+		fac_ie[4] = invoke_id;
+		fac_ie[5] = 0x02; /* Error Code */
+		fac_ie[6] = 1;
+		fac_ie[7] = error_code;
+	}
+	mncc->facility.len = fac_len;
+}
+
+/* send facility request */
+void Pgsm_bs::facility_req(int operation_code, int error_code, unsigned char invoke_id)
+{
+	struct gsm_mncc *mncc;
+
+	gsm_trace_header(p_interface_name, this, MNCC_FACILITY_REQ, DIRECTION_OUT);
+	mncc = create_mncc(MNCC_FACILITY_REQ, p_g_callref);
+
+	enc_ie_facility(mncc, operation_code, error_code, invoke_id);
+
+	gsm_trace_facility((unsigned char *)mncc->facility.info, mncc->facility.len);
+	end_trace();
+	send_and_free_mncc(p_g_lcr_gsm, mncc->msg_type, mncc);
+}
+
+/* FACILITY INDICATION */
+void Pgsm_bs::facility_ind(unsigned int msg_type, unsigned int callref, struct gsm_mncc *mncc)
+{
+	unsigned char *fac_ie, fac_len;
+	unsigned char comp_type, comp_len, *comp_val;
+	unsigned char invoke = 0, invoke_id = 0;
+	unsigned char operation = 0, operation_code = 0;
+	struct lcr_msg *message;
+	int i;
+
+	if (mncc->fields & MNCC_F_FACILITY) {
+		fac_ie = (unsigned char *)mncc->facility.info;
+		fac_len = mncc->facility.len;
+
+		gsm_trace_header(p_interface_name, this, msg_type, DIRECTION_IN);
+		gsm_trace_facility(fac_ie, fac_len);
+		end_trace();
+	} else
+		return;
+
+	/* facility */
+	if (fac_len<=2)
+		return;
+	/* component tag */
+	if (fac_ie[1] > fac_len - 2) {
+		PDEBUG(DEBUG_GSM, "Component Tag in facility message greater than message length\n");
+		return;
+	}
+	comp_type = fac_ie[0];
+	comp_len = fac_ie[1];
+	comp_val = fac_ie + 2;
+	PDEBUG(DEBUG_GSM, "Component Tag type 0x%02x\n", comp_type);
+	/* tags inside component */
+	for (i = 0; i != comp_len;) {
+		if (comp_val[1 + i] > comp_len - i - 2) {
+			PDEBUG(DEBUG_GSM, "Tag inside Component TAG greater than Component length\n");
+			break;
+		}
+		PDEBUG(DEBUG_GSM, "Tag inside Component Tag (type 0x%02x)\n", comp_val[0 + i]);
+		if (comp_val[0 + i] == 0x02 && ! invoke) { /* Invoke ID Tag */
+			if (comp_val[1 + i] != 1) {
+				PDEBUG(DEBUG_GSM, "Invoke ID Tag has invalid length\n");
+				break;
+			}
+			invoke = 1;
+			invoke_id = comp_val[2 + i];
+			PDEBUG(DEBUG_GSM, "Invoke ID Tag inside Component TAG with ID=%d\n", invoke_id);
+		} else if (comp_val[0 + i] == 0x02 && !operation) { /* Operation Code Tag */
+			if (comp_val[1 + i] != 1) {
+				PDEBUG(DEBUG_GSM, "Operation Code Tag has invalid length\n");
+				break;
+			}
+			operation = 1;
+			operation_code = comp_val[2 + i];
+			PDEBUG(DEBUG_GSM, "Operation Code Tag inside Component TAG with Code=%d\n", operation_code);
+		} else
+			PDEBUG(DEBUG_GSM, "Unknown Tag (0x%02x) inside Component TAG, ignoring\n", comp_val[0 + i]);
+
+		i += comp_val[1 + i] + 2;
+	}
+
+	/* check component type */
+	switch (comp_type) {
+	case 0xa1: /* Invoke */
+		if (!invoke) {
+			PDEBUG(DEBUG_GSM, "error: Invoke without Invoke ID\n");
+			break;
+		}
+		if (!operation) {
+			PDEBUG(DEBUG_GSM, "error: Invoke without Operation Tag\n");
+			break;
+		}
+		switch(operation_code) {
+		case 124: /* buildMTPY */
+			message = message_create(p_serial, ACTIVE_EPOINT(p_epointlist), PORT_TO_EPOINT, MESSAGE_3PTY);
+			message->param.threepty.begin = 1;
+			message->param.threepty.invoke = 1;
+			message->param.threepty.invoke_id = invoke_id;
+			message_put(message);
+			return;
+
+		case 121: /* splitMTPY */
+			message = message_create(p_serial, ACTIVE_EPOINT(p_epointlist), PORT_TO_EPOINT, MESSAGE_3PTY);
+			message->param.threepty.end = 1;
+			message->param.threepty.invoke = 1;
+			message->param.threepty.invoke_id = invoke_id;
+			message_put(message);
+			return;
+
+		case 122: /* holdMTPY */
+#ifdef TRANSFER_HACK
+			facility_req(-1, 122, invoke_id); /* rejected by network */
+
+			message = message_create(p_serial, ACTIVE_EPOINT(p_epointlist), PORT_TO_EPOINT, MESSAGE_TRANSFER);
+			message->param.transfer.invoke = 1;
+			message->param.transfer.invoke_id = invoke_id;
+			message_put(message);
+#else
+			message = message_create(p_serial, ACTIVE_EPOINT(p_epointlist), PORT_TO_EPOINT, MESSAGE_3PTY);
+			message->param.threepty.hold = 1;
+			message->param.threepty.invoke = 1;
+			message->param.threepty.invoke_id = invoke_id;
+			message_put(message);
+#endif
+			return;
+
+		case 123: /* retrieveMTPY */
+#ifdef TRANSFER_HACK
+			facility_req(-1, 122, invoke_id); /* rejected by network */
+
+			message = message_create(p_serial, ACTIVE_EPOINT(p_epointlist), PORT_TO_EPOINT, MESSAGE_TRANSFER);
+			message->param.transfer.invoke = 1;
+			message->param.transfer.invoke_id = invoke_id;
+			message_put(message);
+#else
+			message = message_create(p_serial, ACTIVE_EPOINT(p_epointlist), PORT_TO_EPOINT, MESSAGE_3PTY);
+			message->param.threepty.retrieve = 1;
+			message->param.threepty.invoke = 1;
+			message->param.threepty.invoke_id = invoke_id;
+			message_put(message);
+#endif
+			return;
+
+		case 126: /* explicitCT */
+			message = message_create(p_serial, ACTIVE_EPOINT(p_epointlist), PORT_TO_EPOINT, MESSAGE_TRANSFER);
+			message->param.transfer.invoke = 1;
+			message->param.transfer.invoke_id = invoke_id;
+			message_put(message);
+			return;
+		default:
+			PDEBUG(DEBUG_GSM, "error: Unsupported Operation\n");
+			facility_req(-1, 122, invoke_id); /* rejected by network */
+			return;
+		}
+		break;
+	}
+}
+
+
+/* MESSAGE_3PTY */
+void Pgsm_bs::message_3pty(unsigned int epoint_id, int message_id, union parameter *param)
+{
+	if (param->threepty.result) {
+		if (param->threepty.begin)
+			facility_req(124, -1, param->threepty.invoke_id); /* buildMPTY */
+		if (param->threepty.end)
+			facility_req(121, -1, param->threepty.invoke_id); /* splitMPTY */
+	}
+	if (param->threepty.error) {
+		facility_req(-1, 122, param->threepty.invoke_id); /* rejected by network */
+	}
+}
+
+void Pgsm_bs::enc_ie_facility_ect(struct gsm_mncc *mncc, struct param_transfer *transfer)
+{
+	if (transfer->result) {
+		enc_ie_facility(mncc, 126, -1, transfer->invoke_id); /* explicitCT */
+	}
+	if (transfer->error) {
+		enc_ie_facility(mncc, -1, 122, transfer->invoke_id); /* rejected by network */
+	}
+}
+
+/* MESSAGE_TRANSFER */
+void Pgsm_bs::message_transfer(unsigned int epoint_id, int message_id, union parameter *param)
+{
+#ifdef TRANSFER_HACK
+	struct gsm_mncc *mncc;
+
+	/* sending facility */
+	gsm_trace_header(p_interface_name, this, MNCC_FACILITY_REQ, DIRECTION_OUT);
+	mncc = create_mncc(MNCC_FACILITY_REQ, p_g_callref);
+	enc_ie_facility_ect(mncc, &param->transfer);
+	gsm_trace_facility((unsigned char *)mncc->facility.info, mncc->facility.len);
+	end_trace();
+	send_and_free_mncc(p_g_lcr_gsm, mncc->msg_type, mncc);
+#endif
+}
+
 /*
  * handles all indications
  */
@@ -456,6 +707,8 @@ void Pgsm_bs::setup_ind(unsigned int msg_type, unsigned int callref, struct gsm_
 	}
 	p_g_callref = callref;
 	end_trace();
+
+	SCPY(p_g_imsi, mncc->imsi);
 
 	/* caller info */
 	if (mncc->clir.inv)
@@ -755,6 +1008,10 @@ int message_bsc(struct lcr_gsm *lcr_gsm, int msg_type, void *arg)
 		pgsm_bs->retr_ind(msg_type, callref, mncc);
 		break;
 
+		case MNCC_FACILITY_IND:
+		pgsm_bs->facility_ind(msg_type, callref, mncc);
+		break;
+
 		default:
 		PDEBUG(DEBUG_GSM, "Pgsm_bs(%s) gsm port with (caller id %s) received unhandled nessage: 0x%x\n", pgsm_bs->p_name, pgsm_bs->p_callerinfo.id, msg_type);
 	}
@@ -1028,6 +1285,14 @@ int Pgsm_bs::message_epoint(unsigned int epoint_id, int message_id, union parame
 		if (p_state!=PORT_STATE_IDLE)
 			break;
 		message_setup(epoint_id, message_id, param);
+		break;
+
+		case MESSAGE_3PTY:
+		message_3pty(epoint_id, message_id, param);
+		break;
+
+		case MESSAGE_TRANSFER:
+		message_transfer(epoint_id, message_id, param);
 		break;
 
 		default:

@@ -1060,6 +1060,13 @@ void Pgsm::message_disconnect(unsigned int epoint_id, int message_id, union para
 	add_trace("cause", "coding", "%d", mncc->cause.coding);
 	add_trace("cause", "location", "%d", mncc->cause.location);
 	add_trace("cause", "value", "%d", mncc->cause.value);
+#ifdef WITH_GSM_MS
+	/* special case for BS mode */
+	if (param->disconnectinfo.transfer.result && (p_type & PORT_CLASS_GSM_MASK) == PORT_CLASS_GSM_BS) {
+		((class Pgsm_bs *)this)->enc_ie_facility_ect(mncc, &param->disconnectinfo.transfer);
+		gsm_trace_facility((unsigned char *)mncc->facility.info, mncc->facility.len);
+	}
+#endif
 	end_trace();
 	send_and_free_mncc(p_g_lcr_gsm, mncc->msg_type, mncc);
 

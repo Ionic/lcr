@@ -34,6 +34,7 @@ class Pgsm : public Port
 	Pgsm(int type, char *portname, struct port_settings *settings, struct interface *interface);
 	~Pgsm();
 
+	char p_g_imsi[16]; /* imsi of current phone (used for ECT/MPTY with gsm_bs) */
 	signed short p_g_samples[160]; /* last received audi packet */
 	int p_g_tones; /* set, if tones are to be generated */
 	int p_g_earlyb; /* set, if patterns are available */
