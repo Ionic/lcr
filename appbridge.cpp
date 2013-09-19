@@ -136,7 +136,6 @@ fail:
 	/* create port for interface */
 	SPRINT(portname, "%s-%d-out", interface_out->name, 0);
 	memset(&port_settings, 0, sizeof(port_settings));
-#ifdef WITH_MISDN
 	if (interface_out->remote) {
 		struct admin_list	*admin;
 		admin = admin_first;
@@ -153,7 +152,6 @@ fail:
 		}
 		port = new Premote(PORT_TYPE_REMOTE_OUT, portname, &port_settings, interface_out, admin->sock);
 	} else
-#endif
 #ifdef WITH_SIP
 	if (interface_out->sip) {
 		port = new Psip(PORT_TYPE_SIP_OUT, portname, &port_settings, interface_out);
