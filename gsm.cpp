@@ -581,6 +581,7 @@ void Pgsm::modify_lchan(int media_type)
 		add_trace("speech", "version", "Half Rate given");
 		mode->lchan_mode = 0x01; /* GSM V1 */
 		mode->lchan_type = 0x03; /* TCH/H */
+		break;
 	default:
 		add_trace("speech", "version", "Full Rate given");
 		mode->lchan_mode = 0x01; /* GSM V1 */
