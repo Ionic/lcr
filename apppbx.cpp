@@ -1970,6 +1970,16 @@ void EndpointAppPBX::port_connect(struct port_list *portlist, int message_type, 
 		message = message_create(ea_endpoint->ep_serial, ea_endpoint->ep_join_id, EPOINT_TO_JOIN, MESSAGE_AUDIOPATH);
 		message->param.audiopath = 1;
 		message_put(message);
+		if (e_ext.dov_ident[0]) {
+			message = message_create(ea_endpoint->ep_serial, ea_endpoint->ep_join_id, EPOINT_TO_JOIN, MESSAGE_DOV_REQUEST);
+			SPRINT(message->param.dov.data, "%08x ", lcr_random);
+			SCAT(message->param.dov.data, e_ext.dov_ident);
+			message->param.dov.length = strlen((char *)message->param.dov.data);
+			message->param.dov.type = e_ext.dov_type;
+			message->param.dov.level = e_ext.dov_level;
+			dov_msg_write(&message->param, 1);
+			message_put(message);
+		}
 	} else if (!e_adminid) {
 		/* callback */
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) we have a callback, so we create a call with cbcaller: \"%s\".\n", ea_endpoint->ep_serial, e_cbcaller);
@@ -2440,6 +2450,18 @@ void EndpointAppPBX::port_disable_dejitter(struct port_list *portlist, int messa
 	message_put(message);
 }
 
+/* port MESSAGE_DOV_INDICATION */
+void EndpointAppPBX::port_dov_indication(struct port_list *portlist, int message_type, union parameter *param)
+{
+	struct lcr_msg *message;
+
+	logmessage(message_type, param, portlist->port_id, DIRECTION_IN);
+
+	message = message_create(ea_endpoint->ep_serial, ea_endpoint->ep_join_id, EPOINT_TO_JOIN, MESSAGE_DOV_INDICATION);
+	memcpy(&message->param, param, sizeof(union parameter));
+	message_put(message);
+}
+
 
 /* port MESSAGE_UPDATEBRIDGE  */
 void EndpointAppPBX::port_updatebridge(struct port_list *portlist, int message_type, union parameter *param)
@@ -2665,6 +2687,11 @@ void EndpointAppPBX::ea_message_port(unsigned int port_id, int message_type, uni
 		port_vootp(portlist, message_type, param);
 		break;
 
+		/* PORT indivated Data-Over-Voice */
+		case MESSAGE_DOV_INDICATION:
+		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) epoint with terminal '%s' (caller id '%s') indicates Data-Over-Voice.\n", ea_endpoint->ep_serial, e_ext.number, e_callerinfo.id);
+		port_dov_indication(portlist, message_type, param);
+		break;
 
 		default:
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) epoint with terminal '%s' (caller id '%s') received a wrong message: %d\n", ea_endpoint->ep_serial, e_ext.number, e_callerinfo.id, message_type);
@@ -2884,6 +2911,13 @@ void EndpointAppPBX::join_connect(struct port_list *portlist, int message_type, 
 	message_put(message);
 	time(&now);
 	e_start = now;
+
+	/* if the remote answered, we listen to DOV message */
+	if (e_ext.dov_log[0]) {
+		message = message_create(ea_endpoint->ep_serial, ea_endpoint->ep_join_id, EPOINT_TO_JOIN, MESSAGE_DOV_LISTEN);
+		message->param.dov.type = e_ext.dov_type;
+		message_put(message);
+	}
 }
 
 /* join MESSAGE_DISCONNECT MESSAGE_RELEASE */
@@ -3202,6 +3236,43 @@ void EndpointAppPBX::join_disable_dejitter(struct port_list *portlist, int messa
 	}
 }
 
+/* join MESSAGE_DOV_INDICATION */
+void EndpointAppPBX::join_dov_indication(struct port_list *portlist, int message_type, union parameter *param)
+{
+	dov_msg_write(param, 0);
+}
+
+/* join MESSAGE_DOV_REQUEST */
+void EndpointAppPBX::join_dov_request(struct port_list *portlist, int message_type, union parameter *param)
+{
+	struct lcr_msg *message;
+
+	/* don't send DOV from estension to extension */
+	if (e_ext.number[0])
+		return;
+
+	while(portlist) {
+		message = message_create(ea_endpoint->ep_serial, portlist->port_id, EPOINT_TO_PORT, MESSAGE_DOV_REQUEST);
+		memcpy(&message->param, param, sizeof(union parameter));
+		message_put(message);
+		logmessage(message_type, param, portlist->port_id, DIRECTION_OUT);
+		portlist = portlist->next;
+	}
+}
+
+/* join MESSAGE_DOV_LISTEN */
+void EndpointAppPBX::join_dov_listen(struct port_list *portlist, int message_type, union parameter *param)
+{
+	struct lcr_msg *message;
+
+	while(portlist) {
+		message = message_create(ea_endpoint->ep_serial, portlist->port_id, EPOINT_TO_PORT, MESSAGE_DOV_LISTEN);
+		memcpy(&message->param, param, sizeof(union parameter));
+		message_put(message);
+		portlist = portlist->next;
+	}
+}
+
 /* JOIN sends messages to the endpoint
  */
 void EndpointAppPBX::ea_message_join(unsigned int join_id, int message_type, union parameter *param)
@@ -3377,6 +3448,24 @@ void EndpointAppPBX::ea_message_join(unsigned int join_id, int message_type, uni
 		case MESSAGE_DISABLE_DEJITTER:
 		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) epoint with terminal '%s' (caller id '%s') received disable dejitter.\n", ea_endpoint->ep_serial, e_ext.number, e_callerinfo.id);
 		join_disable_dejitter(portlist, message_type, param);
+		break;
+
+		/* JOIN sends a Data-Over-Voice message indication */
+		case MESSAGE_DOV_INDICATION:
+		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) epoint with terminal '%s' (caller id '%s') received Data-Over-Voice indication.\n", ea_endpoint->ep_serial, e_ext.number, e_callerinfo.id);
+		join_dov_indication(portlist, message_type, param);
+		break;
+
+		/* JOIN sends a Data-Over-Voice message request */
+		case MESSAGE_DOV_REQUEST:
+		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) epoint with terminal '%s' (caller id '%s') received Data-Over-Voice request.\n", ea_endpoint->ep_serial, e_ext.number, e_callerinfo.id);
+		join_dov_request(portlist, message_type, param);
+		break;
+
+		/* JOIN sends a Data-Over-Voice listen order */
+		case MESSAGE_DOV_LISTEN:
+		PDEBUG(DEBUG_EPOINT, "EPOINT(%d) epoint with terminal '%s' (caller id '%s') received Data-Over-Voice listen order.\n", ea_endpoint->ep_serial, e_ext.number, e_callerinfo.id);
+		join_dov_listen(portlist, message_type, param);
 		break;
 
 		default:
@@ -4795,6 +4884,23 @@ void EndpointAppPBX::logmessage(int message_type, union parameter *param, unsign
 		end_trace();
 		break;
 
+		case MESSAGE_DOV_INDICATION:
+		case MESSAGE_DOV_REQUEST:
+		trace_header("Data-Over-Voice", dir);
+		if (dir == DIRECTION_OUT)
+			add_trace("to", NULL, "CH(%lu)", port_id);
+		if (dir == DIRECTION_IN)
+			add_trace("from", NULL, "CH(%lu)", port_id);
+		{
+			char dov_str[param->dov.length + 1];
+			memcpy(dov_str, param->dov.data, param->dov.length);
+			dov_str[param->dov.length] = '\0';
+			add_trace("string", NULL, "%s", dov_str);
+		}
+		add_trace("type", NULL, "%d", param->dov.type);
+		end_trace();
+		break;
+
 		default:
 		PERROR("EPOINT(%d) message not of correct type (%d)\n", ea_endpoint->ep_serial, message_type);
 	}
@@ -4826,5 +4932,40 @@ void EndpointAppPBX::message_disconnect_port(struct port_list *portlist, int cau
 	}
 	message_put(message);
 	logmessage(message->type, &message->param, portlist->port_id, DIRECTION_OUT);
+}
+
+void EndpointAppPBX::dov_msg_write(union parameter *param, int sent)
+{
+	FILE *fp;
+	struct tm *tm;
+	time_t ti;
+	int __attribute__((__unused__)) rc;
+
+	/* no write, if no log file given */
+	if (!e_ext.dov_log[0])
+		return;
+
+	fp = fopen(e_ext.dov_log, "a");
+	if (!fp) {
+		PERROR("EPOINT(%d) failed to open Data-Over-Voice log file '%s'\n", ea_endpoint->ep_serial, e_ext.dov_log);
+		return;
+	}
+
+	ti = time(NULL);
+	tm = localtime(&ti);
+	fprintf(fp, "%02d.%02d.%02d %02d:%02d:%02d ", tm->tm_mday, tm->tm_mon+1, tm->tm_year%100, tm->tm_hour, tm->tm_min, tm->tm_sec);
+
+
+	if (sent) {
+		fprintf(fp, "sent [%s] ", numberrize_callerinfo(e_callerinfo.id, e_callerinfo.ntype, options.national, options.international));
+	} else {
+		fprintf(fp, "received [%s] ", e_dialinginfo.id);
+	}
+
+	rc = fwrite(param->dov.data, param->dov.length, 1, fp);
+
+	fprintf(fp, "\n");
+
+	fclose(fp);
 }
 

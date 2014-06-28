@@ -759,6 +759,31 @@ int read_extension(struct extension *ext, char *num)
 		if (!strcmp(option,"otp-ident")) {
 			SCPY(ext->otp_ident, param);
 			PDEBUG(DEBUG_CONFIG, "otp-ident: %s\n",param);
+		} else
+		if (!strcmp(option,"dov_ident")) {
+			if (param[0]) {
+				SCPY(ext->dov_ident, param);
+				PDEBUG(DEBUG_CONFIG, "dov_ident string: %s\n",param);
+			}
+		} else
+		if (!strcmp(option,"dov_log")) {
+			if (param[0]) {
+				SCPY(ext->dov_log, param);
+				PDEBUG(DEBUG_CONFIG, "dov_log filename: %s\n",param);
+			}
+		} else
+		if (!strcmp(option,"dov_type")) {
+			if (!strcasecmp(param, "pcm"))
+				ext->dov_type = DOV_TYPE_PCM;
+			else
+				ext->dov_type = DOV_TYPE_PWM;
+			PDEBUG(DEBUG_CONFIG, "given dov type: %s\n", param);
+		} else
+		if (!strcmp(option,"dov_level")) {
+			if (atoi(param)) {
+				ext->dov_level = atoi(param);
+				PDEBUG(DEBUG_CONFIG, "dov_level: %s\n",param);
+			}
 		} else {
 			PERROR_RUNTIME("Error in %s (line %d): wrong option keyword %s.\n",filename,line,option);
 		}
@@ -1166,6 +1191,18 @@ int write_extension(struct extension *ext, char *number)
 	}
 	fprintf(fp,"\n");
 
+	fprintf(fp,"# Identify to/from remove via Data-Over-Voice feature.\n");
+	fprintf(fp,"dov_ident       %s\n", ext->dov_ident);
+	fprintf(fp,"dov_log         %s\n", ext->dov_log);
+	switch(ext->dov_type) {
+		case DOV_TYPE_PWM:
+		fprintf(fp,"dov_type        pwm\n");
+		break;
+		case DOV_TYPE_PCM:
+		fprintf(fp,"dov_type        pcm\n");
+		break;
+	}
+	fprintf(fp,"dov_level       %d\n\n", ext->dov_level);
 
 	if (fp) fclose(fp);
 	return(1);

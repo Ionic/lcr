@@ -280,6 +280,8 @@ we only support alaw and ulaw!
 	}
 	while(n--)
 		*to++ = flip[*from++];
+	if (psip->p_dov_rx)
+		psip->dov_rx(payload, payload_len);
 	psip->bridge_tx(payload, payload_len);
 
 	return 0;
@@ -600,7 +602,10 @@ int Psip::bridge_rx(unsigned char *data, int len)
 	int ret;
 
 	/* don't bridge, if tones are provided */
-	if (p_tone_name[0])
+	if (p_tone_name[0] || p_dov_tx)
+		return -EBUSY;
+
+	if (p_dov_tx)
 		return -EBUSY;
 
 	if ((ret = Port::bridge_rx(data, len)))
@@ -2045,7 +2050,7 @@ void Psip::update_load(void)
 		return;
 
 	/* don't start timer if ... */
-	if (!p_tone_name[0])
+	if (!p_tone_name[0] && !p_dov_tx)
 		return;
 
 	p_s_next_tv_sec = 0;
@@ -2057,7 +2062,7 @@ static int load_timer(struct lcr_timer *timer, void *instance, int index)
 	class Psip *psip = (class Psip *)instance;
 
 	/* stop timer if ... */
-	if (!psip->p_tone_name[0])
+	if (!psip->p_tone_name[0] && !psip->p_dov_tx)
 		return 0;
 
 	psip->load_tx();
@@ -2111,6 +2116,9 @@ void Psip::load_tx(void)
 	/* copy tones */
 	if (p_tone_name[0]) {
 		tosend -= read_audio(p, tosend);
+	} else
+	if (p_dov_tx) {
+		tosend -= dov_tx(p, tosend);
 	}
 	if (tosend) {
 		PERROR("buffer is not completely filled\n");

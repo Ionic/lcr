@@ -186,7 +186,7 @@ lcr_SOURCES = \
 	$(MISDN_SOURCE) $(GSM_SOURCE) $(SS5_SOURCE) $(SIP_SOURCE) $(VOOTP_SOURCE) \
 	endpoint.cpp endpointapp.cpp \
 	appbridge.cpp apppbx.cpp route.c action.cpp action_efi.cpp action_vbox.cpp extension.c mail.c \
-	join.cpp joinpbx.cpp
+	join.cpp joinpbx.cpp dov.cpp
 
 lcr_LDADD = $(LIBCRYPTO) $(MISDN_LIB) -lpthread $(GSM_LIB) $(SIP_LIB) $(VOOTP_LIB)
 

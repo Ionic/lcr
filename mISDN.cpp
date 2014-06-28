@@ -965,7 +965,7 @@ void PmISDN::load_tx(void)
 			p_m_load = 0;
 
 		/* to send data, tone must be on */
-		if ((p_tone_name[0] || p_m_crypt_msg_loops || p_m_inband_send_on) /* what tones? */
+		if ((p_tone_name[0] || p_dov_tx || p_m_crypt_msg_loops || p_m_inband_send_on) /* what tones? */
 		 && (p_m_load < p_m_preload) /* not too much load? */
 		 && (p_state==PORT_STATE_CONNECT || p_m_mISDNport->tones || p_m_inband_send_on)) { /* connected or inband-tones? */
 			int tosend = p_m_preload - p_m_load, length; 
@@ -1003,6 +1003,11 @@ void PmISDN::load_tx(void)
 
 				/* new length */
 				tosend -= length;
+			}
+
+			/* copy dov */
+			if (p_dov_tx) {
+				tosend -= dov_tx(p, tosend);
 			}
 
 			/* copy tones */
@@ -1141,6 +1146,10 @@ void PmISDN::bchannel_receive(struct mISDNhead *hh, unsigned char *data, int len
 		PERROR("Bchannel received unknown primitve: 0x%x\n", hh->prim);
 		return;
 	}
+
+	/* dov is processed */
+	if (p_dov_rx)
+		dov_rx(data, len);
 
 	/* inband is processed */
 	if (p_m_inband_receive_on)
@@ -1500,7 +1509,7 @@ void PmISDN::update_rxoff(void)
 	int tx_dejitter = 0;
 
 	/* call bridges in user space OR crypto OR recording */
-	if (p_bridge || p_m_crypt_msg_loops || p_m_crypt_listen || p_record || p_tap || p_m_inband_receive_on) {
+	if (p_bridge || p_m_crypt_msg_loops || p_m_crypt_listen || p_record || p_tap || p_m_inband_receive_on || p_dov_rx) {
 		/* rx IS required */
 		if (p_m_rxoff) {
 			/* turn on RX */
@@ -2313,7 +2322,7 @@ int PmISDN::bridge_rx(unsigned char *data, int length)
 	/* check if high priority tones exist
 	 * ignore data in this case
 	 */
-	if (p_tone_name[0] || p_m_crypt_msg_loops || p_m_inband_send_on)
+	if (p_tone_name[0] || p_dov_tx || p_m_crypt_msg_loops || p_m_inband_send_on)
 		return -EBUSY;
 
 	/* preload procedure

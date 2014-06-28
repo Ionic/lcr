@@ -219,6 +219,7 @@ class EndpointAppPBX : public EndpointApp
 	void port_disable_dejitter(struct port_list *portlist, int message_type, union parameter *param);
 	void port_updatebridge(struct port_list *portlist, int message_type, union parameter *param);
 	void port_vootp(struct port_list *portlist, int message_type, union parameter *param);
+	void port_dov_indication(struct port_list *portlist, int message_type, union parameter *param);
 	void ea_message_join(unsigned int join_id, int message, union parameter *param);
 	void join_crypt(struct port_list *portlist, int message_type, union parameter *param);
 	void join_mISDNsignal(struct port_list *portlist, int message_type, union parameter *param);
@@ -234,6 +235,9 @@ class EndpointAppPBX : public EndpointApp
 	void join_facility(struct port_list *portlist, int message_type, union parameter *param);
 	void join_dtmf(struct port_list *portlist, int message_type, union parameter *param);
 	void join_disable_dejitter(struct port_list *portlist, int message_type, union parameter *param);
+	void join_dov_indication(struct port_list *portlist, int message_type, union parameter *param);
+	void join_dov_request(struct port_list *portlist, int message_type, union parameter *param);
+	void join_dov_listen(struct port_list *portlist, int message_type, union parameter *param);
 
 	/* epoint */
 	void new_state(int state);
@@ -372,6 +376,9 @@ class EndpointAppPBX : public EndpointApp
 	void message_disconnect_port(struct port_list *portlist, int cause, int location, const char *display);
 	void logmessage(int message_type, union parameter *param, unsigned int port_id, int dir);
 	void trace_header(const char *name, int direction);
+
+	/* DOV */
+	void dov_msg_write(union parameter *param, int sent);
 };
 
 

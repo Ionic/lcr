@@ -182,6 +182,11 @@ struct port_bridge {
 
 extern struct port_bridge *p_bridge_first;
 
+enum dov_type {
+	DOV_TYPE_PWM,
+	DOV_TYPE_PCM,
+};
+
 /* generic port class */
 class Port
 {
@@ -275,6 +280,36 @@ class Port
 	vootp_t *p_vootp;			/* VoOTP instance */
 	void set_vootp(struct param_vootp *vootp);
 #endif
+
+	/* DOV */
+	int p_dov_tx, p_dov_rx;
+	int p_dov_tx_sync, p_dov_rx_sync;
+	enum dov_type p_dov_tx_type, p_dov_rx_type;
+	unsigned char *p_dov_tx_data, *p_dov_rx_data;
+	int p_dov_tx_data_length;
+	int p_dov_tx_data_pos, p_dov_rx_data_pos;
+	int p_dov_tx_bit_pos, p_dov_rx_bit_pos;
+	int p_dov_tx_pwm_pos, p_dov_rx_pwm_pos;
+	int p_dov_rx_pwm_duration, p_dov_rx_pwm_polarity;
+	int p_dov_tx_up;
+	int p_dov_rx_sync_word;
+	unsigned char p_dov_up;
+	unsigned char p_dov_down;
+	void dov_init(void);
+	void dov_exit(void);
+	void dov_reset_tx(void);
+	void dov_reset_rx(void);
+	struct lcr_timer p_dov_tx_timer;
+	struct lcr_timer p_dov_rx_timer;
+	void dov_sendmsg(unsigned char *data, int length, enum dov_type type, int level);
+	int dov_tx(unsigned char *data, int length);
+	int dov_tx_pcm(unsigned char *data, int length);
+	int dov_tx_pwm(unsigned char *data, int length);
+	void dov_listen(enum dov_type type);
+	void dov_rx(unsigned char *data, int length);
+	void dov_rx_pcm(unsigned char *data, int length);
+	void dov_rx_pwm(unsigned char *data, int length);
+	void dov_message(unsigned char *data, int length);
 
 	void free_epointlist(struct epoint_list *epointlist);
 	void free_epointid(unsigned int epoint_id);

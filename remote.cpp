@@ -140,6 +140,8 @@ void Premote::message_remote(int message_type, union parameter *param)
 
 	switch (message_type) {
 	case MESSAGE_TRAFFIC:
+		if (p_dov_rx)
+			dov_rx(param->traffic.data, param->traffic.len);
 		/* record audio */
 		if (p_record)
 			record(param->traffic.data, param->traffic.len, 0); // from down
@@ -153,6 +155,10 @@ void Premote::message_remote(int message_type, union parameter *param)
 				record(param->traffic.data, param->traffic.len, 1); // from up
 			if (p_tap)
 				tap(param->traffic.data, param->traffic.len, 1); // from up
+			admin_message_from_lcr(p_r_remote_id, p_r_ref, MESSAGE_TRAFFIC, param);
+		} else if (p_dov_tx) {
+			/* use receeived traffic to trigger sending DOV */
+			dov_tx(param->traffic.data, param->traffic.len);
 			admin_message_from_lcr(p_r_remote_id, p_r_ref, MESSAGE_TRAFFIC, param);
 		}
 		return;

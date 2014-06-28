@@ -357,6 +357,13 @@ struct param_vootp {
 	char id[32];
 };
 
+struct param_dov {
+	int type; /* dov_type coding */
+	int level; /* volume of sending signals */
+	int length;
+	unsigned char data[255];
+};
+
 /* structure of message parameter */
 union parameter {
 	struct param_tone tone; /* MESSAGE_TONE */
@@ -384,6 +391,7 @@ union parameter {
 	unsigned int bridge_id; /* MESSAGE_BRIDGE */
 	struct param_traffic traffic; /* MESSAGE_TRAFFIC */
 	struct param_3pty threepty; /* MESSAGE_TRAFFIC */
+	struct param_dov dov; /* MESSAGE_DOV */
 	unsigned int queue; /* MESSAGE_DISABLE_DEJITTER */
 	struct param_vootp vootp; /* MESSAGE_VOOTP */
 };
@@ -445,6 +453,9 @@ enum { /* messages between entities */
 	MESSAGE_DISABLE_DEJITTER,/* tell (mISDN) port not to dejitter */
 	MESSAGE_UPDATEBRIDGE,	/* tell join to update bridge. (sent by mISDN port) */
 	MESSAGE_VOOTP,		/* enable/disable VoOTP */
+	MESSAGE_DOV_INDICATION,	/* data over voice message received */
+	MESSAGE_DOV_REQUEST,	/* sending data over voice message */
+	MESSAGE_DOV_LISTEN,	/* listen order to data over voice message */
 };
 
 #define MESSAGES static const char *messages_txt[] = { \
@@ -486,6 +497,9 @@ enum { /* messages between entities */
 	"MESSAGE_DISABLE_DEJITTER", \
 	"MESSAGE_UPDATEBRIDGE", \
 	"MESSAGE_VOOTP", \
+	"MESSAGE_DOV_INDIVATION", \
+	"MESSAGE_DOV_REQUEST", \
+	"MESSAGE_DOV_LISTEN", \
 };
 
 
