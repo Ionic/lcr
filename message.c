@@ -30,10 +30,19 @@ void cleanup_message(void)
 	del_work(&message_work);
 }
 
+unsigned int lcr_random = 0;
+
 /* creates a new message with the given attributes. the message must be filled then. after filling, the message_put must be called */
 struct lcr_msg *message_create(int id_from, int id_to, int flow, int type)
 {
 	struct lcr_msg *message;
+	struct timeval now_tv;
+	struct timezone now_tz;
+
+	gettimeofday(&now_tv, &now_tz);
+	lcr_random = (lcr_random << 1) | (lcr_random >> 31);
+	lcr_random ^= now_tv.tv_sec;
+	lcr_random ^= now_tv.tv_usec;
 
 	message = (struct lcr_msg *)MALLOC(sizeof(struct lcr_msg));
 	if (!message)

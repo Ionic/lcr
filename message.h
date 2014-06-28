@@ -489,6 +489,7 @@ enum { /* messages between entities */
 };
 
 
+extern unsigned int lcr_random;
 struct lcr_msg *message_create(int id_from, int id_to, int flow, int type);
 #define message_put(m) _message_put(m, __FILE__, __LINE__)
 void _message_put(struct lcr_msg *message, const char *file, int line);
