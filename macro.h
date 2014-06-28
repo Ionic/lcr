@@ -13,7 +13,7 @@
 
 /* safe strcpy/strncpy */
 
-#define SCPY(dst, src) scpy(dst, src, sizeof(dst))
+#define SCPY(dst, src) scpy((char *)dst, src, sizeof(dst))
 static inline void scpy(char *dst, const char *src, unsigned int siz)
 {
 	strncpy(dst, src, siz);
@@ -22,7 +22,7 @@ static inline void scpy(char *dst, const char *src, unsigned int siz)
 
 /* safe strcat/strncat */
 
-#define SCAT(dst, src) scat(dst, src, sizeof(dst))
+#define SCAT(dst, src) scat((char *)dst, src, sizeof(dst))
 static inline void scat(char *dst, const char *src, unsigned int siz)
 {
 	strncat(dst, src, siz-strlen(dst)-1);
@@ -31,7 +31,7 @@ static inline void scat(char *dst, const char *src, unsigned int siz)
 
 /* safe concat of a byte */
 
-#define SCCAT(dst, src) sccat(dst, src, sizeof(dst))
+#define SCCAT(dst, src) sccat((char *)dst, src, sizeof(dst))
 static inline void sccat(char *dst, char chr, unsigned int siz)
 {
 	if (strlen(dst) < siz-1)
@@ -43,7 +43,7 @@ static inline void sccat(char *dst, char chr, unsigned int siz)
 
 /* safe sprintf/snprintf */
 
-#define SPRINT(dst, fmt, arg...) sprint(dst, sizeof(dst), fmt, ## arg)
+#define SPRINT(dst, fmt, arg...) sprint((char *)dst, sizeof(dst), fmt, ## arg)
 static inline void sprint(char *dst, unsigned int siz, const char *fmt, ...)
 {
 	va_list args;
