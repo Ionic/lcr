@@ -189,7 +189,7 @@ noinst_HEADERS = \
 	message.h callerid.h socket_server.h port.h vbox.h endpoint.h endpointapp.h \
 	appbridge.h apppbx.h route.h extension.h join.h joinpbx.h lcrsocket.h
 
-noinst_HEADERS += myisdn.h mISDN.h dss1.h crypt.h remote.h
+noinst_HEADERS += myisdn.h mISDN.h dss1.h crypt.h remote.h fxs.h
 noinst_HEADERS += ss5.h ss5_encode.h ss5_decode.h
 noinst_HEADERS += mncc.h gsm.h gsm_audio.h gsm_bs.h gsm_ms.h
 noinst_HEADERS += ie.cpp sip.h
