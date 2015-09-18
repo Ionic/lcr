@@ -429,6 +429,8 @@ clean:	semi-clean
 			$(TOAST) $(TCAT) $(UNTOAST)	\
 			$(ROOT)/gsm-1.0.tar.Z
 
+distclean: clean
+	@echo dummy distclean
 
 # Two tools that helped me generate gsm_encode.c and gsm_decode.c,
 # but aren't generally needed to port this.
@@ -492,3 +494,6 @@ $(TST)/cod2txt:		$(TST)/cod2txt.o $(LIBGSM)
 $(TST)/cod2lin:		$(TST)/cod2lin.o $(LIBGSM)
 			$(LD) $(LFLAGS) -o $(TST)/cod2lin \
 				$(TST)/cod2lin.o $(LIBGSM) $(LDLIB)
+
+distdir:
+	@echo dummy distdir
