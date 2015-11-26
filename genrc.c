@@ -39,7 +39,7 @@ int main(void)
 	FILE *fp;
 	int i = 0, j, jj, n;
 	char input[256], file[256];
-	int ret;
+	int __attribute__((__unused__)) ret;
 
 	printf("\n\nThis program generates a script, which is used to start/stop/restart mISDN\n");
 	printf("driver. Please select card only once. Mode and options are given by LCR.\n");

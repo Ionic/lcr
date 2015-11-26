@@ -752,7 +752,6 @@ int admin_state(struct admin_queue **responsep)
 	class Pdss1		*pdss1;
 	struct mISDNport	*mISDNport;
 	struct select_channel	*selchannel;
-	int			anybusy;
 #endif
 	struct interface	*interface;
 	struct interface_port	*ifport;
@@ -937,7 +936,6 @@ int admin_state(struct admin_queue **responsep)
 				}
 				/* channel state */
 				i = 0;
-				anybusy = 0;
 				while(i < mISDNport->b_num) {
 					response->am[num].u.i.busy[i] = mISDNport->b_state[i];
 					if (mISDNport->b_port[i])

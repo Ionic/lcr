@@ -48,7 +48,7 @@ int open_tone(char *file, int *codec, signed int *length, signed int *left)
 	int linksize;
 	int l;
 	char *p;
-	int ret;
+	int __attribute__((__unused__)) ret;
 
 
 	/* try to open the law file */

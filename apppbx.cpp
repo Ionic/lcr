@@ -3391,10 +3391,8 @@ void EndpointAppPBX::pick_join(char *extensions)
 	class Join *join;
 	class JoinPBX *joinpbx;
 	struct join_relation *relation;
-	int vbox;
 
 	/* find an endpoint that is ringing internally or vbox with higher priority */
-	vbox = 0;
 	found = NULL;
 	eapp = apppbx_first;
 	while(eapp) {
@@ -3405,7 +3403,6 @@ void EndpointAppPBX::pick_join(char *extensions)
 					if (port->p_type == PORT_TYPE_VBOX_OUT) {
 						if (match_list(extensions, eapp->e_ext.number)) {
 							found = eapp;
-							vbox = 1;
 							break;
 						}
 					}

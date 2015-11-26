@@ -257,7 +257,7 @@ int main(int argc, char *argv[])
 
 	/* query available isdn ports */
 	if (!(strcasecmp(argv[1],"query"))) {
-		int rc;
+		int __attribute__((__unused__)) rc;
 		fprintf(stderr, "-> Using 'misdn_info'\n");
 		rc = system("misdn_info");
 		ret = 0;

@@ -268,7 +268,7 @@ void _end_trace(const char *__file, int __line)
 	FILE *fp;
 	struct admin_list	*admin;
 	struct admin_queue	*response, **responsep;	/* response pointer */
-	int ret;
+	int __attribute__((__unused__)) ret;
 
 	if (!trace.name[0])
 		PERROR("trace not started in file %s line %d\n", __file, __line);

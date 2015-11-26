@@ -1722,7 +1722,7 @@ void EndpointAppPBX::encrypt_shared(void)
 	struct lcr_msg *message;
 	const char *errstr = "";
 	class Port *port;
-	int type, key_len;
+	int key_len;
 	unsigned char *key;
 	char *auth_pointer, *crypt_pointer, *key_pointer;
 	int ret;
@@ -1779,7 +1779,7 @@ void EndpointAppPBX::encrypt_shared(void)
 		goto reject;
 	}
 	if (!strcasecmp(crypt_pointer, "blowfish")) {
-		type = CC_ACTBF_REQ;
+//		type = CC_ACTBF_REQ;
 		if (key_len < 4) {
 			PDEBUG(DEBUG_EPOINT, "EPOINT(%d) Key too short.\n", ea_endpoint->ep_serial);
 			errstr = "Key Too Short";

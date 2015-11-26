@@ -174,7 +174,6 @@ fail:
 #ifdef WITH_MISDN
 		struct mISDNport *mISDNport;
 		int channel = 0;
-		int earlyb;
 		int mode = B_MODE_TRANSPARENT;
 
 		/* hunt for mISDNport and create Port */
@@ -193,7 +192,6 @@ fail:
 			port = ss5_hunt_line(mISDNport);
 		else
 #endif
-		earlyb = mISDNport->earlyb;
 #ifdef ISDN_P_FXS_POTS
 		if (mISDNport->pots)
 			port = new Pfxs(PORT_TYPE_POTS_FXS_OUT, mISDNport, portname, &port_settings, mISDNport->ifport->interface, mode);

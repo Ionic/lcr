@@ -1955,8 +1955,7 @@ struct route_action *EndpointAppPBX::route(struct route_ruleset *ruleset)
 	struct timeval		current_time;
 #ifdef WITH_MISDN
 	struct mISDNport	*mISDNport;
-	int			avail,
-				any;
+	int			avail;
 	int			jj;
 	class Port		*port;
 	class Pfxs		*ourfxs, *fxs;
@@ -2250,7 +2249,6 @@ struct route_action *EndpointAppPBX::route(struct route_ruleset *ruleset)
 				case MATCH_BUSY:
 				case MATCH_IDLE:
 #ifdef WITH_MISDN
-				any = 0;
 				mISDNport = mISDNport_first;
 				while(mISDNport) {
 					if (mISDNport->ifport)

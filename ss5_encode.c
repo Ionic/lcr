@@ -88,7 +88,7 @@ unsigned char *ss5_encode(unsigned char *buffer, int len, char digit, int sample
 	}
 	if (!ss5_digits[i][0]) {
 		PERROR("Digit '%c' does not exist.\n", digit);
-		memset(buffer, audio_s16_to_law[0], sizeof(buffer));
+		memset(buffer, audio_s16_to_law[0], len);
 		return buffer;
 	}
 

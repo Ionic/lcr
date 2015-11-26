@@ -2533,7 +2533,6 @@ void Pdss1::message_connect(unsigned int epoint_id, int message_id, union parame
 {
 	l3_msg *l3m;
 	int type, plan, present, screen;
-	class Endpoint *epoint;
 	time_t current_time;
 
 	/* NT-MODE in setup state we must send PROCEEDING first */
@@ -2628,7 +2627,6 @@ void Pdss1::message_connect(unsigned int epoint_id, int message_id, union parame
 //		enc_facility_centrex(&connect->FACILITY, dmsg, (unsigned char *)p_connectinfo.name, 0);
 	/* date & time */
 	if (p_m_d_ntmode || p_m_d_tespecial) {
-		epoint = find_epoint_id(epoint_id);
 		time(&current_time);
 		enc_ie_date(l3m, current_time, p_settings.no_seconds);
 	}
@@ -2716,7 +2714,6 @@ if (/*	 ||*/ p_state==PORT_STATE_OUT_SETUP) {
 void Pdss1::message_release(unsigned int epoint_id, int message_id, union parameter *param)
 {
 	l3_msg *l3m;
-	class Endpoint *epoint;
 	char *p = NULL;
 
 	/*
@@ -2796,7 +2793,6 @@ wirklich erst proceeding?:
 	/* send cause */
 	enc_ie_cause(l3m, (p_m_mISDNport->locally && param->disconnectinfo.location==LOCATION_PRIVATE_LOCAL)?LOCATION_PRIVATE_LOCAL:param->disconnectinfo.location, param->disconnectinfo.cause);
 	/* send display */
-	epoint = find_epoint_id(epoint_id);
 	if (param->disconnectinfo.display[0])
 		p = param->disconnectinfo.display;
 	if (p) if (*p && (p_m_d_ntmode || p_m_d_tespecial))

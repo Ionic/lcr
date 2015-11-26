@@ -63,7 +63,6 @@ static struct mi_ext_fn_s myfn;
 int mISDN_initialize(void)
 {
 	char filename[256];
-	int ver;
 
 	/* try to open raw socket to check kernel */
 	mISDNsocket = socket(PF_ISDN, SOCK_RAW, ISDN_P_BASE);
@@ -76,7 +75,7 @@ int mISDN_initialize(void)
 	// set debug printout function
 	myfn.prt_debug = my_mISDNlib_debug;
 
-	ver = init_layer3(4, &myfn); // buffer of 4
+	init_layer3(4, &myfn); // buffer of 4
 
 	/* open debug, if enabled and not only stack debugging */
 	if (options.deb) {
@@ -604,6 +603,7 @@ void bchannel_event(struct mISDNport *mISDNport, int i, int event)
 	class PmISDN *b_port = mISDNport->b_port[i];
 	int state = mISDNport->b_state[i];
 	int timer = -1; // no change
+#if 0
 	int p_m_tx_gain = 0;
 	int p_m_rx_gain = 0;
 	char *p_m_pipeline = NULL;
@@ -619,6 +619,7 @@ void bchannel_event(struct mISDNport *mISDNport, int i, int event)
 		p_m_crypt_key_len = b_port->p_m_crypt_key_len;
 		p_m_crypt_key_type = /*b_port->p_m_crypt_key_type*/1;
 	}
+#endif
 
 	switch(event) {
 		case B_EVENT_USE:
@@ -1533,7 +1534,7 @@ static int mISDN_upqueue(struct lcr_fd *fd, unsigned int what, void *instance, i
 	struct mbuffer *mb;
 	struct l3_msg *l3m;
 	char byte;
-	int ret;
+	int __attribute__((__unused__)) ret;
 
 	/* unset global semaphore */
 	upqueue_avail = 0;
@@ -1769,7 +1770,7 @@ int do_layer3(struct mlayer3 *ml3, unsigned int cmd, unsigned int pid, struct l3
 		// this is no problem.
 		upqueue_avail = 1;
 		char byte = 0;
-		int ret;
+		int __attribute__((__unused__)) ret;
 		ret = write(upqueue_pipe[1], &byte, 1);
 	}
 	return 0;
@@ -1796,6 +1797,7 @@ int mISDN_getportbyname(int sock, int cnt, char *portname)
 	return (port);
 }
 
+#ifdef ISDN_P_FXS_POTS
 /* handle frames from pots */
 static int pots_sock_callback(struct lcr_fd *fd, unsigned int what, void *instance, int i)
 {
@@ -1818,12 +1820,10 @@ static int pots_sock_callback(struct lcr_fd *fd, unsigned int what, void *instan
 	case PH_CONTROL_IND:
 		cont = *((unsigned int *)(buffer + MISDN_HEADER_LEN));
 		/* l1-control is sent to LCR */
-#ifdef ISDN_P_FXS_POTS
 		if (mISDNport->ntmode)
 			stack2manager_fxs(mISDNport, cont);
 		else
 			PERROR("FXO not supported!\n");
-#endif
 		break;
 	case PH_ACTIVATE_REQ:
 		break;
@@ -1834,6 +1834,7 @@ static int pots_sock_callback(struct lcr_fd *fd, unsigned int what, void *instan
 
 	return 0;
 }
+#endif
 
 /*
  * global function to add a new card (port)

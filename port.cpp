@@ -666,7 +666,7 @@ int Port::open_record(int type, int vbox, int skip, char *extension, int anon_ig
 	char filename[256];
 	time_t now;
 	struct tm *now_tm;
-	int ret;
+	int __attribute__((__unused__)) ret;
 
 	if (!extension) {
 		PERROR("Port(%d) not an extension\n", p_serial);
@@ -759,7 +759,7 @@ void Port::close_record(int beep, int mute)
 	char *p;
 	struct caller_info callerinfo;
 	const char *valid_chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890_.-!$%&/()=+*;~";
-	int ret;
+	int __attribute__((__unused__)) ret;
 
 	if (!p_record)
 		return;
@@ -960,7 +960,7 @@ void Port::record(unsigned char *data, int length, int dir_fromup)
 	signed short *s;
 	int free, i, ii;
 	signed int sample;
-	int ret;
+	int __attribute__((__unused__)) ret;
 
 	/* no recording */
 	if (!p_record || !length)
