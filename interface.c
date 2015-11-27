@@ -1097,9 +1097,6 @@ static int inter_ss5(struct interface *interface, char *filename, int line, char
 		if (!strcasecmp(element, "delay"))
 			ifport->ss5 |= SS5_FEATURE_DELAY;
 		else
-		if (!strcasecmp(element, "starrelease"))
-			ifport->ss5 |= SS5_FEATURE_STAR_RELEASE;
-		else
 		if (!strcasecmp(element, "suppress"))
 			ifport->ss5 |= SS5_FEATURE_SUPPRESS;
 		else {

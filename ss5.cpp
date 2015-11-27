@@ -1434,13 +1434,6 @@ void Pss5::pulse_ind(int on)
 			add_trace("digit", NULL, "%s", dial+1);
 			add_trace("pulses", NULL, "%d", p_m_s_pulsecount);
 			end_trace();
-			/* special star release feature */
-			if ((p_m_mISDNport->ss5 & SS5_FEATURE_STAR_RELEASE) && dial[1] == '*') {
-				ss5_trace_header(p_m_mISDNport, this, SS5_DIALING_IND, p_m_b_channel);
-				add_trace("star", NULL, "releases call");
-				end_trace();
-				goto star_release;
-			}
 			if (p_state == PORT_STATE_IN_SETUP) {
 				/* sending digit as setup */
 				do_setup(dial, 0); /* include 'a' == KP1 */
@@ -1466,7 +1459,6 @@ void Pss5::pulse_ind(int on)
 				ss5_trace_header(p_m_mISDNport, this, SS5_DIALING_IND, p_m_b_channel);
 				add_trace("longtone", NULL, "releases call");
 				end_trace();
-				star_release:
 				/* long pulse is gone, release current connection, if any */
 				while(p_epointlist) {
 					message = message_create(p_serial, p_epointlist->epoint_id, PORT_TO_EPOINT, MESSAGE_RELEASE);
