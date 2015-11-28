@@ -52,18 +52,16 @@ static char decode_one[8] =
  * calculate the coefficients of the given sample and decode
  */
 
-char ss5_decode(unsigned char *data, int len)
+char ss5_decode(unsigned char *data, int len, double *_quality)
 {
 	signed short buf[len];
 	signed long sk, sk1, sk2, low, high;
 	int k, n, i;
 	int f1 = 0, f2 = 0;
 	double result[NCOEFF], power, noise;
-#ifdef DEBUG_LEVELS
-	double snr;
-#endif
 	signed long long cos2pik_;
 	char digit = ' ';
+	double quality;
 
 	/* convert samples */
 	for (i = 0; i < len; i++)
@@ -124,38 +122,34 @@ char ss5_decode(unsigned char *data, int len)
 		}
 	}
 
-#ifdef DEBUG_LEVELS
-	snr = 0;
-#endif
+	quality = 0;
 	/* check one frequency */
 	if (result[f1] > TONE_MIN_DB /* must be at least -17 db */
 	 && result[f1]*SNR > noise) { /*  */
 		digit = decode_one[f1];
-#ifdef DEBUG_LEVELS
 		if (digit != ' ')
-			snr = result[f1] / noise;
-#endif
+			quality = result[f1] / noise;
 	}
 	/* check two frequencies */
 	if (result[f1] > TONE_MIN_DB && result[f2] > TONE_MIN_DB /* must be at lease -17 db */
 	 && result[f1]*TONE_DIFF_DB <= result[f2] /* f2 must be not less than 5 db below f1 */
 	 && (result[f1]+result[f2])*SNR > noise) { /* */
 		digit = decode_two[f1][f2];
-#ifdef DEBUG_LEVELS
 		if (digit != ' ')
-			snr = (result[f1]+result[f2]) / noise;
-#endif
+			quality = (result[f1]+result[f2]) / noise;
 	}
 
 	/* debug powers */
 #ifdef DEBUG_LEVELS
 	for (i = 0; i < NCOEFF; i++)
 		printf("%d:%3d %c ", i, (int)(result[i]*100), (f1==i || f2==i)?'*':' ');
-	printf("N:%3d digit:%c snr=%3d\n", (int)(noise*100), digit, (int)(snr*100));
+	printf("N:%3d digit:%c quality=%3d%%\n", (int)(noise*100), digit, (int)(quality*100));
 // 	if (result[f1]*TONE_DIFF_DB <= result[f2]) /* f2 must be not less than 5 db below f1 */
 //		printf("jo!");
 #endif
 
+	if (_quality)
+		*_quality = quality;
 	return digit;
 }
 

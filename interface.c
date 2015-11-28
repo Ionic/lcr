@@ -1097,8 +1097,15 @@ static int inter_ss5(struct interface *interface, char *filename, int line, char
 		if (!strcasecmp(element, "delay"))
 			ifport->ss5 |= SS5_FEATURE_DELAY;
 		else
-		if (!strcasecmp(element, "suppress"))
-			ifport->ss5 |= SS5_FEATURE_SUPPRESS;
+		if (!strcasecmp(element, "release"))
+			ifport->ss5 |= SS5_FEATURE_RELEASE;
+		else
+		if (!strcasecmp(element, "suppress")
+		 || !strcasecmp(element, "mute"))
+			ifport->ss5 |= SS5_FEATURE_MUTE;
+		else
+		if (!strcasecmp(element, "quality"))
+			ifport->ss5 |= SS5_FEATURE_QUALITY;
 		else {
 			SPRINT(interface_error, "Error in %s (line %d): parameter '%s' does not allow value element '%s'.\n", filename, line, parameter, element);
 			return(-1);

@@ -24,6 +24,7 @@
  * - PORT_STATE_OUT_SETUP: the seizing procedure is started.
  * - PORT_STATE_OUT_OVERLAP: the transmitter is sending the digits.
  * - PORT_STATE_OUT_PROCEEDING: the digits are sent, we wait until someone answers.
+ * - PORT_STATE_OUT_DISCONNECT: a clear-back is sent, after DISCONNECT was received
  * - PORT_STATE_CONNECT: a call is answered on either side.
  * - PORT_STATE_IN_SETUP: the seizing is received, we wait for the first digit.
  * - PORT_STATE_IN_OVERLAP: the digits are received.
@@ -127,7 +128,8 @@ const char *ss5_signal_name[] = {
 #define BELL_TIMER_RECOG_END	(300*8) /* recognize end of digit */
 
 /* ss5 timers */
-#define SS5_TIMER_OVERLAP	5.0	/* timeout for overlap digits received on outgoing exchange */
+#define SS5_TIMER_OVERLAP	10	/* timeout for overlap digits received on incomming exchange */
+#define SS5_TIMER_RELEASE	20	/* timeout after disconnect on incomming exchange */
 
 
 /*
@@ -156,6 +158,8 @@ enum { /* even values are indications, odd values are requests */
 	SS5_DIALING_REQ,
 	SS5_FORWARD_TRANSFER_IND,
 	SS5_FORWARD_TRANSFER_REQ,
+	SS5_TIMEOUT_IND,
+	SS5_QUALITY_IND,
 };
 static struct isdn_message {
 	const char *name;
@@ -183,6 +187,8 @@ static struct isdn_message {
 	{"DIALING SENDING", SS5_DIALING_REQ},
 	{"FORWARD-TRANSFER RECEIVED", SS5_FORWARD_TRANSFER_IND},
 	{"FORWARD-TRANSFER SENDING", SS5_FORWARD_TRANSFER_REQ},
+	{"TIMEOUT", SS5_TIMEOUT_IND},
+	{"QUALITY REPORT", SS5_QUALITY_IND},
 	{NULL, 0},
 };
 static void ss5_trace_header(struct mISDNport *mISDNport, class PmISDN *port, unsigned int msg, int channel)
@@ -333,7 +339,23 @@ class Pss5 *ss5_hunt_line(struct mISDNport *mISDNport)
 	return NULL;
 }
 
-int queue_event(struct lcr_work *work, void *instance, int index);
+static int timeout(struct lcr_timer *timer, void *instance, int i)
+{
+        class Pss5 *ss5 = (class Pss5 *)instance;
+
+	ss5->register_timeout();
+
+	return 0;
+}
+
+int queue_event(struct lcr_work *work, void *instance, int index)
+{
+	class Pss5 *ss5port = (class Pss5 *)instance;
+
+	ss5port->process_queue();
+
+	return 0;
+}
 
 /*
  * constructor
@@ -352,14 +374,16 @@ Pss5::Pss5(int type, struct mISDNport *mISDNport, char *portname, struct port_se
 	p_m_s_decoder_count = 0;
 	//p_m_s_decoder_buffer;
 	p_m_s_sample_nr = 0;
+	p_m_s_quality_value = 0;
+	p_m_s_quality_count = 0;
 	p_m_s_recog = 0;
 	memset(&p_m_s_queue, 0, sizeof(p_m_s_queue));
 	add_work(&p_m_s_queue, queue_event, this, 0);
-	p_m_s_answer = 0;
-	p_m_s_busy_flash = 0;
-	p_m_s_clear_back = 0;
+	p_m_s_queued_signal = 0;
 	memset(p_m_s_delay_digits, ' ', sizeof(p_m_s_delay_digits));
 	memset(p_m_s_delay_mute, ' ', sizeof(p_m_s_delay_mute));
+	memset(&p_m_s_timer, 0, sizeof(p_m_s_timer));
+	add_timer(&p_m_s_timer, timeout, this, 0);
 
 	/* turn on signalling receiver */
 	inband_receive_on();
@@ -373,9 +397,62 @@ Pss5::Pss5(int type, struct mISDNport *mISDNport, char *portname, struct port_se
  */
 Pss5::~Pss5()
 {
+	del_timer(&p_m_s_timer);
 	del_work(&p_m_s_queue);
 }
 
+
+/*
+ * timeout trigger
+ */
+void Pss5::register_timeout(void)
+{
+	ss5_trace_header(p_m_mISDNport, this, SS5_TIMEOUT_IND, p_m_b_channel);
+	end_trace();
+	switch(p_state) {
+	case PORT_STATE_IN_SETUP:
+		PDEBUG(DEBUG_SS5, "%s: timeout after seize\n", p_name);
+		do_release(CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, SS5_CLEAR_BACK_REQ);
+		break;
+	case PORT_STATE_IN_OVERLAP:
+		PDEBUG(DEBUG_SS5, "%s: timeout during dialing\n", p_name);
+		do_release(CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, SS5_CLEAR_BACK_REQ);
+		break;
+	case PORT_STATE_OUT_DISCONNECT:
+		PDEBUG(DEBUG_SS5, "%s: timeout after sending busy flash / clear forward\n", p_name);
+		/* always send clear forward, because release guard only works as a reply to clear forward */
+		do_release(CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL, SS5_CLEAR_FORWARD_REQ);
+		break;
+	}
+}
+
+/*
+ * change port state
+ */
+void Pss5::new_state(int state)
+{
+	switch(state) {
+	case PORT_STATE_IN_SETUP:
+	case PORT_STATE_IN_OVERLAP:
+		if (SS5_TIMER_OVERLAP == 0)
+			break;
+		PDEBUG(DEBUG_SS5, "%s: starting timeout timer with %d seconds\n", p_name, SS5_TIMER_OVERLAP);
+		schedule_timer(&p_m_s_timer, SS5_TIMER_OVERLAP, 0);
+		break;
+	case PORT_STATE_OUT_DISCONNECT:
+		if (p_type != PORT_TYPE_SS5_IN)
+			break;
+		if (SS5_TIMER_RELEASE == 0)
+			break;
+		PDEBUG(DEBUG_SS5, "%s: starting timeout timer with %d seconds\n", p_name, SS5_TIMER_RELEASE);
+		schedule_timer(&p_m_s_timer, SS5_TIMER_RELEASE, 0);
+		break;
+	default:
+		PDEBUG(DEBUG_SS5, "%s: stopping timeout timer\n", p_name);
+		unsched_timer(&p_m_s_timer);
+	}
+	Port::new_state(state);
+}
 
 /*
  * change ss5 states
@@ -386,52 +463,60 @@ void Pss5::_new_ss5_state(int state, const char *func, int line)
 	p_m_s_state = state;
 	p_m_s_signal = SS5_SIGNAL_NULL;
 
-	if (p_m_s_state == SS5_STATE_IDLE && (p_m_s_answer || p_m_s_busy_flash || p_m_s_clear_back))
+	if (p_m_s_state == SS5_STATE_IDLE && p_m_s_queued_signal)
 		trigger_work(&p_m_s_queue);
 }
 
-int queue_event(struct lcr_work *work, void *instance, int index)
+void Pss5::process_queue(void)
 {
-	class Pss5 *ss5port = (class Pss5 *)instance;
+	/* when clear forward is scheduled, we abort current state */
+	if (p_m_s_queued_signal == SS5_CLEAR_FORWARD_REQ)
+		new_ss5_state(SS5_STATE_IDLE);
+	
+	/* if there is an ongoing signal, we wait until done */
+	if (p_m_s_state != SS5_STATE_IDLE)
+		return;
 
-	if (ss5port->p_m_s_state == SS5_STATE_IDLE) {
-		/* if answer signal is queued */
-		if (ss5port->p_m_s_answer) {
-			ss5port->p_m_s_answer = 0;
-			/* start answer */
-			ss5_trace_header(ss5port->p_m_mISDNport, ss5port, SS5_ANSWER_REQ, ss5port->p_m_b_channel);
-			end_trace();
-			ss5port->start_signal(SS5_STATE_ANSWER);
-		}
+	/* this shoud not happen */
+	if (!p_m_s_queued_signal)
+		return;
 
-		/* if busy-flash signal is queued */
-		if (ss5port->p_m_s_busy_flash) {
-			ss5port->p_m_s_busy_flash = 0;
-			/* start busy-flash */
-			ss5_trace_header(ss5port->p_m_mISDNport, ss5port, SS5_BUSY_FLASH_REQ, ss5port->p_m_b_channel);
-			end_trace();
-			ss5port->start_signal(SS5_STATE_BUSY_FLASH);
-		}
-
-		/* if clear-back signal is queued */
-		if (ss5port->p_m_s_clear_back) {
-			ss5port->p_m_s_clear_back = 0;
-			/* start clear-back */
-			ss5_trace_header(ss5port->p_m_mISDNport, ss5port, SS5_CLEAR_BACK_REQ, ss5port->p_m_b_channel);
-			end_trace();
-			ss5port->start_signal(SS5_STATE_CLEAR_BACK);
-		}
+	/* start signal */
+	ss5_trace_header(p_m_mISDNport, this, p_m_s_queued_signal, p_m_b_channel);
+	end_trace();
+	switch(p_m_s_queued_signal) {
+	case SS5_ANSWER_REQ:
+		/* start answer */
+		p_m_s_queued_signal = 0; /* prevent trigger loop */
+		start_signal(SS5_STATE_ANSWER);
+		break;
+	case SS5_BUSY_FLASH_REQ:
+		/* busy flash */
+		p_m_s_queued_signal = 0; /* prevent trigger loop */
+		start_signal(SS5_STATE_BUSY_FLASH);
+		break;
+	case SS5_CLEAR_BACK_REQ:
+		/* clear back */
+		p_m_s_queued_signal = 0; /* prevent trigger loop */
+		start_signal(SS5_STATE_CLEAR_BACK);
+		break;
+	case SS5_CLEAR_FORWARD_REQ:
+		/* clear forward */
+		p_m_s_queued_signal = 0; /* prevent trigger loop */
+		start_signal(SS5_STATE_CLEAR_FORWARD);
+		break;
+	default:
+		PERROR("unhandled event %d\n", p_m_s_queued_signal);
+		p_m_s_queued_signal = 0;
 	}
-
-	return 0;
 }
 
 void Pss5::_new_ss5_signal(int signal, const char *func, int line)
 {
 	if (p_m_s_signal)
-		PDEBUG(DEBUG_SS5, "%s(%s:%d): changing SS5 signal state from %s to %s\n", p_name, func, line, ss5_signal_name[p_m_s_signal], ss5_signal_name[signal]);
+		PDEBUG(DEBUG_SS5, "%s: changing SS5 signal state from %s to %s\n", p_name, ss5_signal_name[p_m_s_signal], ss5_signal_name[signal]);
 	else
-		PDEBUG(DEBUG_SS5, "%s(%s:%d): changing SS5 signal state to %s\n", p_name, func, line, ss5_signal_name[signal]);
+		PDEBUG(DEBUG_SS5, "%s: changing SS5 signal state to %s\n", p_name, ss5_signal_name[signal]);
 	p_m_s_signal = signal;
 }
 
@@ -445,6 +530,7 @@ void Pss5::inband_receive(unsigned char *buffer, int len)
 {
 	int count = 0, tocopy, space;
 	char digit;
+	double quality;
 
 	again:
 	/* how much to copy ? */
@@ -463,8 +549,24 @@ void Pss5::inband_receive(unsigned char *buffer, int len)
 		return;
 
 	/* decode one frame */
-	digit = ss5_decode(p_m_s_decoder_buffer, SS5_DECODER_NPOINTS);
+	digit = ss5_decode(p_m_s_decoder_buffer, SS5_DECODER_NPOINTS, &quality);
 	p_m_s_decoder_count = 0;
+
+	/* indicate quality of received digit */
+	if ((p_m_mISDNport->ss5 & SS5_FEATURE_QUALITY)) {
+		if (digit != ' ') {
+			p_m_s_quality_value += quality;
+			p_m_s_quality_count++;
+		} else if (p_m_s_quality_count) {
+			ss5_trace_header(p_m_mISDNport, this, SS5_QUALITY_IND, p_m_b_channel);
+			add_trace("digit", NULL, "%c", p_m_s_last_digit);
+			quality = p_m_s_quality_value/p_m_s_quality_count;
+			add_trace("quality", NULL, "%3d%%", (int)(quality*100.0));
+			end_trace();
+			p_m_s_quality_value = 0;
+			p_m_s_quality_count = 0;
+		}
+	}
 
 #ifdef DEBUG_DETECT
 	if (p_m_s_last_digit != digit && digit != ' ')
@@ -518,7 +620,7 @@ void Pss5::inband_receive(unsigned char *buffer, int len)
 	p_m_s_last_digit_used = digit;
 
 	/* update mute */
-	if ((p_m_mISDNport->ss5 & SS5_FEATURE_SUPPRESS)) {
+	if ((p_m_mISDNport->ss5 & SS5_FEATURE_MUTE)) {
 		int mdigit;
 		memcpy(p_m_s_delay_mute, p_m_s_delay_mute+1, sizeof(p_m_s_delay_mute)-1);
 		p_m_s_delay_mute[sizeof(p_m_s_delay_mute)-1] = digit;
@@ -1001,7 +1103,7 @@ int Pss5::inband_send(unsigned char *buffer, int len)
 		if (duration > 0 && p_m_s_sample_nr >= duration) {
 			PDEBUG(DEBUG_SS5, "%s: sending tone '%c' complete, starting delay\n", p_name, digit);
 			if (p_m_s_state == SS5_STATE_DOUBLE_SEIZE) {
-				do_release(CAUSE_NOCHANNEL, LOCATION_PRIVATE_LOCAL);
+				do_release(CAUSE_NOCHANNEL, LOCATION_PRIVATE_LOCAL, SS5_CLEAR_FORWARD_REQ);
 				break;
 			}
 			new_ss5_state(SS5_STATE_DELAY);
@@ -1636,7 +1738,7 @@ void Pss5::double_seizure_ind(void)
 /*
  * shuts down by sending a clear forward and releasing endpoint
  */
-void Pss5::do_release(int cause, int location)
+void Pss5::do_release(int cause, int location, int signal)
 {
 	struct lcr_msg *message;
 
@@ -1649,12 +1751,15 @@ void Pss5::do_release(int cause, int location)
 		free_epointlist(p_epointlist);
 	}
 
-	/* start clear-forward */
-	ss5_trace_header(p_m_mISDNport, this, SS5_CLEAR_FORWARD_REQ, p_m_b_channel);
-	end_trace();
-	start_signal(SS5_STATE_CLEAR_FORWARD);
-
-	new_state(PORT_STATE_RELEASE);
+//	if (p_state != PORT_STATE_RELEASE) {
+		p_m_s_queued_signal = signal;
+		if (signal == SS5_CLEAR_FORWARD_REQ) {
+			new_state(PORT_STATE_RELEASE);
+			set_tone("", "noise");
+		} else
+			new_state(PORT_STATE_OUT_DISCONNECT);
+		trigger_work(&p_m_s_queue);
+//	}
 }
 
 
@@ -1900,8 +2005,8 @@ void Pss5::message_connect(unsigned int epoint_id, int message_id, union paramet
 	memcpy(&p_connectinfo, &param->connectinfo, sizeof(p_connectinfo));
 
 	if (p_state != PORT_STATE_CONNECT) {
+		p_m_s_queued_signal = SS5_ANSWER_REQ;
 		new_state(PORT_STATE_CONNECT);
-		p_m_s_answer = 1;
 		trigger_work(&p_m_s_queue);
 	}
 
@@ -1911,29 +2016,33 @@ void Pss5::message_connect(unsigned int epoint_id, int message_id, union paramet
 /* MESSAGE_DISCONNECT */
 void Pss5::message_disconnect(unsigned int epoint_id, int message_id, union parameter *param)
 {
-	/* disconnect and clear forward (release guard) */
-//	if ((p_type==PORT_TYPE_SS5_IN && !p_m_mISDNport->tones) /* incomming exchange with no tones */
-if (0	 || p_type==PORT_TYPE_SS5_OUT) { /* outgoing exchange */
-		do_release(param->disconnectinfo.cause, param->disconnectinfo.location);
+	/* release and clear forward */
+	if (p_type==PORT_TYPE_SS5_OUT) { /* outgoing exchange */
+		do_release(param->disconnectinfo.cause, param->disconnectinfo.location, SS5_CLEAR_FORWARD_REQ);
+		return;
+	}
+	/* release and clear back */
+	if ((p_m_mISDNport->ss5 & SS5_FEATURE_RELEASE)) {
+		do_release(param->disconnectinfo.cause, param->disconnectinfo.location, SS5_CLEAR_BACK_REQ);
 		return;
 	}
 
-	ss5_trace_header(p_m_mISDNport, this, SS5_CLEAR_BACK_REQ, p_m_b_channel);
-	end_trace();
-	start_signal(SS5_STATE_CLEAR_BACK);
-
-	new_state(PORT_STATE_OUT_DISCONNECT);
+	/* disconnect by sending clear back (after answer) or busy flash (before answer) */
+	if (p_state != PORT_STATE_OUT_DISCONNECT) {
+		if (p_state == PORT_STATE_CONNECT)
+			p_m_s_queued_signal = SS5_CLEAR_BACK_REQ;
+		else
+			p_m_s_queued_signal = SS5_BUSY_FLASH_REQ;
+		new_state(PORT_STATE_OUT_DISCONNECT);
+		trigger_work(&p_m_s_queue);
+	}
 }
 
 /* MESSAGE_RELEASE */
 void Pss5::message_release(unsigned int epoint_id, int message_id, union parameter *param)
 {
-	do_release(param->disconnectinfo.cause, param->disconnectinfo.location);
-}
-
-void Pss5::register_timeout(void)
-{
-	do_release(CAUSE_UNSPECIFIED, LOCATION_PRIVATE_LOCAL);
+	/* always send clear forward, because release guard only works as a reply to clear forward */
+	do_release(param->disconnectinfo.cause, param->disconnectinfo.location, SS5_CLEAR_FORWARD_REQ);
 }
 
 /*

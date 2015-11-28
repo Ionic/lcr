@@ -9,14 +9,16 @@
 **                                                                           **
 \*****************************************************************************/ 
 
-#define SS5_ENABLE			0x00000001
-#define SS5_FEATURE_CONNECT		0x00000002
-#define SS5_FEATURE_NODISCONNECT	0x00000004
-#define SS5_FEATURE_RELEASEGUARDTIMER	0x00000008
-#define SS5_FEATURE_BELL		0x00000010
-#define SS5_FEATURE_PULSEDIALING	0x00000020
-#define SS5_FEATURE_DELAY		0x00000040
-#define SS5_FEATURE_SUPPRESS		0x00000100
+#define SS5_ENABLE			0x00000001 /* if ccitt5 is defined in interface.conf */
+#define SS5_FEATURE_CONNECT		0x00000002 /* send connect to originator of the call */
+#define SS5_FEATURE_NODISCONNECT	0x00000004 /* do not send disconnect to originator of call */
+#define SS5_FEATURE_RELEASEGUARDTIMER	0x00000008 /* prevent blueboxing by forcing long duration of releas guard signal */
+#define SS5_FEATURE_BELL		0x00000010 /* allow breaking and pulse dialing using 2600 Hz */
+#define SS5_FEATURE_PULSEDIALING	0x00000020 /* outgoing exchange sends 2600 Hz pulses instead of mf tones */
+#define SS5_FEATURE_DELAY		0x00000040 /* simulate round trip delay by delaying decoder output */
+#define SS5_FEATURE_RELEASE		0x00000080 /* release if incomming exchange disconnets */
+#define SS5_FEATURE_MUTE		0x00000100 /* mute audio path while 2600/2400 Hz tones are detected */
+#define SS5_FEATURE_QUALITY		0x00000200 /* indicate quality of received digits */
 
 /* SS5 port classes */
 class Pss5 : public PmISDN
@@ -40,12 +42,14 @@ class Pss5 : public PmISDN
 	unsigned char p_m_s_delay_digits[3000/SS5_DECODER_NPOINTS]; /* delay buffer for received digits */
 	unsigned char p_m_s_delay_mute[400/SS5_DECODER_NPOINTS]; /* 40 ms delay on mute, so a 'chirp' can be heared */
 	int p_m_s_sample_nr; /* decoder's sample number, counter */
+	double p_m_s_quality_value; /* quality report */
+	int p_m_s_quality_count; /* quality report */
 	int p_m_s_recog; /* sample counter to wait for signal recognition time */
 	struct lcr_work p_m_s_queue;
-	int p_m_s_answer; /* queued signal */
-	int p_m_s_busy_flash; /* queued signal */
-	int p_m_s_clear_back; /* queued signal */
+	int p_m_s_queued_signal; /* queued signal */
+	struct lcr_timer p_m_s_timer; /* dialing timeout */
 
+	void new_state(int state);		/* set new state */
 	void _new_ss5_state(int state, const char *func, int line);
 	void _new_ss5_signal(int signal, const char *func, int line);
 	void inband_receive(unsigned char *buffer, int len);
@@ -54,7 +58,7 @@ class Pss5 : public PmISDN
 	int inband_dial_pulse(unsigned char *buffer, int len, int count);
 	void start_signal(int);
 	void start_outgoing(void);
-	void do_release(int cause, int location);
+	void do_release(int cause, int location, int signal);
 	void do_setup(char *digit, int complete);
 
 	void seizing_ind(void);
@@ -75,6 +79,7 @@ class Pss5 : public PmISDN
 	void message_release(unsigned int epoint_id, int message_id, union parameter *param);
 
 	void register_timeout(void);
+	void process_queue(void);
 
 };
 
