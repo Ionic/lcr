@@ -1587,6 +1587,7 @@ void EndpointAppPBX::_action_goto_menu(int mode)
 	/* if the 'menu' was selected, we will flush all digits */
 	if (mode) {
 		e_dialinginfo.id[0] = 0;
+		e_dialinginfo.sending_complete = 0;
 		e_extdialing = e_dialinginfo.id;
 	} else {
 		/* remove digits that are required to match the rule */

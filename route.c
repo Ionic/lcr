@@ -2392,7 +2392,7 @@ struct route_action *EndpointAppPBX::route(struct route_ruleset *ruleset)
 				/* we must have greater or equal length to values */
 				if ((unsigned long)strlen(string) < comp_len) {
 					/* special case for unfinished dialing */
-					if (cond->match == MATCH_DIALING) {
+					if (cond->match == MATCH_DIALING && !e_dialinginfo.sending_complete) {
 						couldbetrue = 1; /* could match */
 						comp_len = strlen(string);
 					} else {
@@ -2466,7 +2466,8 @@ struct route_action *EndpointAppPBX::route(struct route_ruleset *ruleset)
 
 			cond = cond->next;
 		}
-		if (timeout>now_ll && match==1) { /* the matching rule with timeout in the future */
+		/* if sending complete, we use future match now, since waiting does not make sense anymore */
+		if (timeout>now_ll && match==1 && !e_dialinginfo.sending_complete) { /* the matching rule with timeout in the future */
 			if (match_timeout == 0 || timeout < match_timeout) { /* first timeout or lower */
 				/* set timeout in the furture */
 				match_timeout = timeout;
