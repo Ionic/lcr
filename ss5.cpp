@@ -531,6 +531,7 @@ void Pss5::inband_receive(unsigned char *buffer, int len)
 	int count = 0, tocopy, space;
 	char digit;
 	double quality;
+	int mute = 0;
 
 	again:
 	/* how much to copy ? */
@@ -618,23 +619,6 @@ void Pss5::inband_receive(unsigned char *buffer, int len)
 		}
 	}
 	p_m_s_last_digit_used = digit;
-
-	/* update mute */
-	if ((p_m_mISDNport->ss5 & SS5_FEATURE_MUTE)) {
-		int mdigit;
-		memcpy(p_m_s_delay_mute, p_m_s_delay_mute+1, sizeof(p_m_s_delay_mute)-1);
-		p_m_s_delay_mute[sizeof(p_m_s_delay_mute)-1] = digit;
-		mdigit = p_m_s_delay_mute[0];
-		if (p_m_mute) {
-			/* mute is on */
-			if (mdigit != 'A' && mdigit != 'B' && mdigit != 'C')
-				mute_off();
-		} else {
-			/* mute is off */
-			if (mdigit == 'A' || mdigit == 'B' || mdigit == 'C')
-				mute_on();
-		}
-	}
 
 	/* delay decoded tones */
 	if ((p_m_mISDNport->ss5 & SS5_FEATURE_DELAY)) {
@@ -1051,6 +1035,42 @@ void Pss5::inband_receive(unsigned char *buffer, int len)
 		else
 			pulse_ind(0);
 		break;
+	}
+
+	/* update mute on RX */
+	if ((p_m_mISDNport->ss5 & SS5_FEATURE_MUTE_RX)) {
+		int mdigit;
+		memcpy(p_m_s_delay_mute, p_m_s_delay_mute+1, sizeof(p_m_s_delay_mute)-1);
+		p_m_s_delay_mute[sizeof(p_m_s_delay_mute)-1] = digit;
+		mdigit = p_m_s_delay_mute[0];
+		if (mdigit == 'A' || mdigit == 'B' || mdigit == 'C')
+			mute = 1;
+	}
+
+	/* mute when TX */
+	if ((p_m_mISDNport->ss5 & SS5_FEATURE_MUTE_TX)) {
+		switch(p_m_s_signal) {
+		case SS5_SIGNAL_SEND_ON_RECOG:
+		case SS5_SIGNAL_RECEIVE_RECOG:
+			if (p_m_s_recog > SS5_DELAY_MUTE)
+				mute = 1;
+			break;
+		case SS5_SIGNAL_SEND_OFF:
+		case SS5_SIGNAL_RECEIVE:
+			mute = 1;
+			break;
+		}
+	}
+
+	/* apply mute state */
+	if (p_m_mute) {
+		/* mute is on */
+		if (!mute)
+			mute_off();
+	} else {
+		/* mute is off */
+		if (mute)
+			mute_on();
 	}
 
 	/* something more to decode ? */

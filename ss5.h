@@ -7,7 +7,9 @@
 **                                                                           **
 ** ss5-port header file                                                      **
 **                                                                           **
-\*****************************************************************************/ 
+\*****************************************************************************/
+
+#define SS5_DELAY_MUTE			50*8	/* time to wait until multing */
 
 #define SS5_ENABLE			0x00000001 /* if ccitt5 is defined in interface.conf */
 #define SS5_FEATURE_CONNECT		0x00000002 /* send connect to originator of the call */
@@ -17,8 +19,9 @@
 #define SS5_FEATURE_PULSEDIALING	0x00000020 /* outgoing exchange sends 2600 Hz pulses instead of mf tones */
 #define SS5_FEATURE_DELAY		0x00000040 /* simulate round trip delay by delaying decoder output */
 #define SS5_FEATURE_RELEASE		0x00000080 /* release if incomming exchange disconnets */
-#define SS5_FEATURE_MUTE		0x00000100 /* mute audio path while 2600/2400 Hz tones are detected */
-#define SS5_FEATURE_QUALITY		0x00000200 /* indicate quality of received digits */
+#define SS5_FEATURE_MUTE_RX		0x00000100 /* mute audio path when 2600/2400 Hz tones are detected */
+#define SS5_FEATURE_MUTE_TX		0x00000200 /* mute audio path when 2600/2400 Hz tones are detected and reply tones are transmitted */
+#define SS5_FEATURE_QUALITY		0x00000400 /* indicate quality of received digits */
 
 /* SS5 port classes */
 class Pss5 : public PmISDN
@@ -40,7 +43,7 @@ class Pss5 : public PmISDN
 	int p_m_s_decoder_count; /* samples currently decoded */
 	unsigned char p_m_s_decoder_buffer[SS5_DECODER_NPOINTS]; /* buffer for storing one goertzel window */
 	unsigned char p_m_s_delay_digits[3000/SS5_DECODER_NPOINTS]; /* delay buffer for received digits */
-	unsigned char p_m_s_delay_mute[400/SS5_DECODER_NPOINTS]; /* 40 ms delay on mute, so a 'chirp' can be heared */
+	unsigned char p_m_s_delay_mute[SS5_DELAY_MUTE/SS5_DECODER_NPOINTS]; /* delay before mute, so a 'chirp' can be heared */
 	int p_m_s_sample_nr; /* decoder's sample number, counter */
 	double p_m_s_quality_value; /* quality report */
 	int p_m_s_quality_count; /* quality report */

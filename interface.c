@@ -1100,9 +1100,11 @@ static int inter_ss5(struct interface *interface, char *filename, int line, char
 		if (!strcasecmp(element, "release"))
 			ifport->ss5 |= SS5_FEATURE_RELEASE;
 		else
-		if (!strcasecmp(element, "suppress")
-		 || !strcasecmp(element, "mute"))
-			ifport->ss5 |= SS5_FEATURE_MUTE;
+		if (!strcasecmp(element, "mute-rx"))
+			ifport->ss5 |= SS5_FEATURE_MUTE_RX;
+		else
+		if (!strcasecmp(element, "mute-tx"))
+			ifport->ss5 |= SS5_FEATURE_MUTE_TX;
 		else
 		if (!strcasecmp(element, "quality"))
 			ifport->ss5 |= SS5_FEATURE_QUALITY;
@@ -1394,8 +1396,9 @@ struct interface_param interface_param[] = {
 	" bell - Allow releasing and pulse-dialing via 2600 Hz like old Bell systems.\n"
 	" pulsedialing - Use pulse dialing on outgoing exchange. (takes long!)\n"
 	" delay - Use on incomming exchange, to make you feel a delay when blueboxing.\n"
-	" starrelease - Pulse dialing a star (11 pulses per digit) clears current call.\n"
-	" suppress - Suppress received tones, as they will be recognized."},
+	" release - Pulse dialing a star (11 pulses per digit) clears current call.\n"
+	" mutes-rx - Mute received 2600 and 2400 Hz tones when detected. (more realistic)\n"
+	" mutes-tx - Mute received 2600 and 2400 Hz tones while transmitting reply tone. (more hackable)"},
 #endif
 
 	{"remote", &inter_remote, "<application>",
