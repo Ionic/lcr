@@ -9,7 +9,7 @@
 
 
 /* ulaw -> signed 16-bit */
-static short isdn_audio_ulaw_to_s16[] =
+static unsigned short isdn_audio_ulaw_to_s16[] =
 {
 	0x8284, 0x8684, 0x8a84, 0x8e84, 0x9284, 0x9684, 0x9a84, 0x9e84,
 	0xa284, 0xa684, 0xaa84, 0xae84, 0xb284, 0xb684, 0xba84, 0xbe84,
@@ -46,7 +46,7 @@ static short isdn_audio_ulaw_to_s16[] =
 };
 
 /* alaw -> signed 16-bit */
-static short isdn_audio_alaw_to_s16[] =
+static unsigned short isdn_audio_alaw_to_s16[] =
 {
 	0x13fc, 0xec04, 0x0144, 0xfebc, 0x517c, 0xae84, 0x051c, 0xfae4,
 	0x0a3c, 0xf5c4, 0x0048, 0xffb8, 0x287c, 0xd784, 0x028c, 0xfd74,
@@ -100,7 +100,7 @@ void write_law(FILE *fp, char *name, char law)
 	unsigned int i;
 	short sample;
 	unsigned int size, wsize;
-	int ret;
+	int __attribute__((__unused__)) ret;
 
 	if ((lfp=fopen(name,"r"))) {
 		/* get size */
@@ -134,9 +134,9 @@ void write_law(FILE *fp, char *name, char law)
 		while(i < size) {
 			ret = fread(buffer, 1, 1, lfp);
 			if (law == 'a')
-				sample = isdn_audio_alaw_to_s16[*buffer];
+				sample = (signed short)isdn_audio_alaw_to_s16[*buffer];
 			else
-				sample = isdn_audio_ulaw_to_s16[*buffer];
+				sample = (signed short)isdn_audio_ulaw_to_s16[*buffer];
 			ret = fwrite(&sample, 2, 1, fp);
 			i+=2;
 		}

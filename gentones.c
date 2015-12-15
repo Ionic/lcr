@@ -10,7 +10,7 @@
 
 
 /* ulaw -> signed 16-bit */
-static short isdn_audio_ulaw_to_s16[] =
+static unsigned short isdn_audio_ulaw_to_s16[] =
 {
 	0x8284, 0x8684, 0x8a84, 0x8e84, 0x9284, 0x9684, 0x9a84, 0x9e84,
 	0xa284, 0xa684, 0xaa84, 0xae84, 0xb284, 0xb684, 0xba84, 0xbe84,
@@ -47,7 +47,7 @@ static short isdn_audio_ulaw_to_s16[] =
 };
 
 /* alaw -> signed 16-bit */
-static short isdn_audio_alaw_to_s16[] =
+static unsigned short isdn_audio_alaw_to_s16[] =
 {
 	0x13fc, 0xec04, 0x0144, 0xfebc, 0x517c, 0xae84, 0x051c, 0xfae4,
 	0x0a3c, 0xf5c4, 0x0048, 0xffb8, 0x287c, 0xd784, 0x028c, 0xfd74,
@@ -92,7 +92,7 @@ unsigned char encode_isdn(short sample, char law)
 
 	i=0;
 	while(i<256) {
-		diff = (law=='u')?isdn_audio_ulaw_to_s16[i]:isdn_audio_alaw_to_s16[i]-sample;
+		diff = (law=='u')?((signed short)isdn_audio_ulaw_to_s16[i]):((signed short)isdn_audio_alaw_to_s16[i])-sample;
 //printf("s16=%d sample%d diff=%d\n",isdn_audio_to_s16[i],sample,diff);
 		if (diff<0)
 			diff=0-diff;
@@ -150,7 +150,7 @@ void write_wav(FILE *fp, char *wav, char law)
 	short sample, sample2;
 	signed int size, chunk;
 	int gotfmt = 0, gotdata = 0;
-	int ret;
+	int __attribute__((__unused__)) ret;
 
 	if ((wfp=fopen(wav,"r"))) {
 		ret=fread(buffer,8,1,wfp);

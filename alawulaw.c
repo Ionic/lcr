@@ -13,7 +13,7 @@ signed int *audio_law_to_s32;
 unsigned char silence;
 
 /* ulaw -> signed 16-bit */
-static signed int audio_ulaw_to_s32[] =
+static unsigned int audio_ulaw_to_s32[] =
 {
 	0xffff8284, 0xffff8684, 0xffff8a84, 0xffff8e84,
 	0xffff9284, 0xffff9684, 0xffff9a84, 0xffff9e84,
@@ -82,7 +82,7 @@ static signed int audio_ulaw_to_s32[] =
 };
 
 /* alaw -> signed 16-bit */
-static signed int audio_alaw_to_s32[] =
+static unsigned int audio_alaw_to_s32[] =
 {
 	0x000013fc, 0xffffec04, 0x00000144, 0xfffffebc,
 	0x0000517c, 0xffffae84, 0x0000051c, 0xfffffae4,
@@ -155,7 +155,7 @@ unsigned char audio_s16_to_law[65536];
 
 
 /* table is used to generate s16_to_alaw */
-static short audio_alaw_relations[] =
+static unsigned short audio_alaw_relations[] =
 {
 	0x8684, 0x55, 0x8a84, 0xd5, 0x8e84, 0x15, 0x9284, 0x95,
 	0x9684, 0x75, 0x9a84, 0xf5, 0x9e84, 0x35, 0xa284, 0xb5,
@@ -231,32 +231,32 @@ void generate_tables(char law)
 
 	if (law == 'a') {
 		silence = 0x2a;
-		audio_law_to_s32=audio_alaw_to_s32;
+		audio_law_to_s32 = (signed int *)audio_alaw_to_s32;
 		/* generating alaw-table */
 		i = j = 0;
 		while(i < 65536) {
-			if (i-32768 > audio_alaw_relations[j<<1])
+			if (i-32768 > (signed short)audio_alaw_relations[j<<1])
 				j++;
 			if (j>255)
 				j=255;
 			audio_s16_to_law[(i-32768) & 0xffff]
-				 = audio_alaw_relations[(j<<1)|1];
+				 = (signed short)audio_alaw_relations[(j<<1)|1];
 			i++;
 		}
 	} else {
 		silence = 0xff;
-		audio_law_to_s32=audio_ulaw_to_s32;
+		audio_law_to_s32 = (signed int *)audio_ulaw_to_s32;
 		/* generating ulaw-table */
 		i = j = 0;
 		while(i < 32768) {
-			if (i-32768 > audio_ulaw_to_s32[j])
+			if (i-32768 >  (signed int)audio_ulaw_to_s32[j])
 				j++;
 			audio_s16_to_law[(i-32768) & 0xffff] = j;
 			i++;
 		}
 		j = 255;
 		while(i < 65536) {
-			if (i-0x32768 > audio_ulaw_to_s32[j])
+			if (i-0x32768 >  (signed int)audio_ulaw_to_s32[j])
 				j--;
 			audio_s16_to_law[(i-32768) & 0xffff] = j;
 			i++;
