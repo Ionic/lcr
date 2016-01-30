@@ -1280,11 +1280,11 @@ static int mncc_fd_close(struct lcr_gsm *lcr_gsm, struct lcr_fd *lfd)
 	/* free all the calls that were running through the MNCC interface */
 	port = port_first;
 	while(port) {
-		if ((port->p_type & PORT_CLASS_mISDN_MASK) == PORT_CLASS_GSM) {
+		if ((port->p_type & PORT_CLASS_MASK) == PORT_CLASS_GSM) {
 			pgsm = (class Pgsm *)port;
 			if (pgsm->p_g_lcr_gsm == lcr_gsm) {
 				message = message_create(pgsm->p_serial, ACTIVE_EPOINT(pgsm->p_epointlist), PORT_TO_EPOINT, MESSAGE_RELEASE);
-				message->param.disconnectinfo.cause = 27; // temp. unavail.
+				message->param.disconnectinfo.cause = 41; // temp. fail.
 				message->param.disconnectinfo.location = LOCATION_PRIVATE_LOCAL;
 				message_put(message);
 				pgsm->new_state(PORT_STATE_RELEASE);
