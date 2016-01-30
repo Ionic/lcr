@@ -395,6 +395,13 @@ void Pgsm_bs::select_payload_type(struct gsm_mncc *mncc, unsigned char *payload_
 				decoder = p_g_amr_decoder;
 				half = 1;
 				break;
+			case 0x80:
+				add_trace("speech", "version", "Analog 8000Hz given");
+				media_type = MEDIA_TYPE_ANALOG;
+				payload_type = dynamic_type++;
+				encoder = (void *)1;
+				decoder = (void *)1;
+				break;
 			default:
 				add_trace("speech", "version", "%d given", mncc->bearer_cap.speech_ver[i]);
 				media_type = 0;
@@ -463,6 +470,7 @@ void Pgsm_bs::setup_ind(unsigned int msg_type, unsigned int callref, struct gsm_
 	if (p_g_callref) {
 		/* release in case the ID is already in use */
 		add_trace("error", NULL, "callref already in use");
+reject:
 		end_trace();
 		mncc = create_mncc(MNCC_REJ_REQ, callref);
 		gsm_trace_header(p_interface_name, this, MNCC_REJ_REQ, DIRECTION_OUT);
@@ -479,6 +487,11 @@ void Pgsm_bs::setup_ind(unsigned int msg_type, unsigned int callref, struct gsm_
 		new_state(PORT_STATE_RELEASE);
 		trigger_work(&p_g_delete);
 		return;
+	}
+	if (callref < 0x40000000) {
+		/* release in case the ID is invalid */
+		add_trace("error", NULL, "callref invalid, not of BSC type");
+		goto reject;
 	}
 	p_g_callref = callref;
 	end_trace();
@@ -571,7 +584,7 @@ void Pgsm_bs::setup_ind(unsigned int msg_type, unsigned int callref, struct gsm_
 	gsm_trace_header(p_interface_name, this, msg_type, DIRECTION_IN);
 	if (p_callerinfo.id[0])
 		add_trace("calling", "number", "%s", p_callerinfo.id);
-	else
+	else if (p_callerinfo.imsi[0])
 		SPRINT(p_callerinfo.id, "imsi-%s", p_callerinfo.imsi);
 	add_trace("calling", "imsi", "%s", p_callerinfo.imsi);
 	add_trace("dialing", "number", "%s", p_dialinginfo.id);
@@ -677,6 +690,7 @@ int message_bsc(struct lcr_gsm *lcr_gsm, int msg_type, void *arg)
 	 || msg_type == GSM_TCHF_FRAME_EFR
 	 || msg_type == GSM_TCHH_FRAME
 	 || msg_type == GSM_TCH_FRAME_AMR
+	 || msg_type == ANALOG_8000HZ
 	 || msg_type == GSM_BAD_FRAME) {
 		if (port) {
 			/* inject DTMF, if enabled */

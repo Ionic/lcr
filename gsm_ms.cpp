@@ -84,6 +84,7 @@ void Pgsm_ms::setup_ind(unsigned int msg_type, unsigned int callref, struct gsm_
 	if (p_g_callref) {
 		/* release in case the ID is already in use */
 		add_trace("error", NULL, "callref already in use");
+reject:
 		end_trace();
 		mncc = create_mncc(MNCC_REJ_REQ, callref);
 		gsm_trace_header(p_interface_name, this, MNCC_REJ_REQ, DIRECTION_OUT);
@@ -101,6 +102,12 @@ void Pgsm_ms::setup_ind(unsigned int msg_type, unsigned int callref, struct gsm_
 		trigger_work(&p_g_delete);
 		return;
 	}
+	if (callref < 0x40000000) {
+		/* release in case the ID is invalid */
+		add_trace("error", NULL, "callref invalid, not of MS type");
+		goto reject;
+	}
+
 	p_g_callref = callref;
 	end_trace();
 

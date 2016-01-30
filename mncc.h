@@ -62,6 +62,7 @@
 #define GSM_TCHF_FRAME_EFR	0x0301
 #define GSM_TCHH_FRAME		0x0302
 #define GSM_TCH_FRAME_AMR	0x0303
+#define ANALOG_8000HZ		0x0380
 #define GSM_BAD_FRAME		0x03ff
 
 #define MNCC_SOCKET_HELLO	0x0400
@@ -189,6 +190,7 @@ enum gsm48_bcap_speech_ver {
 	GSM48_BCAP_SV_EFR	= 2,
 	GSM48_BCAP_SV_AMR_F	= 4,
 	GSM48_BCAP_SV_AMR_H	= 5,
+	BCAP_SV_ANALOG_8000HZ	= 0x80,
 };
 
 /* Expanded fields from GSM TS 04.08, Table 10.5.102 */

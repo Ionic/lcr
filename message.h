@@ -145,6 +145,7 @@ enum {
 	MEDIA_TYPE_GSM_EFR,
 	MEDIA_TYPE_AMR,
 	MEDIA_TYPE_GSM_HR,
+	MEDIA_TYPE_ANALOG,	/* just send analog data via MNCC */
 };
 
 /* rtp-info structure */

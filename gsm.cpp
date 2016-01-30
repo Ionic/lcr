@@ -290,6 +290,15 @@ void Pgsm::frame_receive(void *arg)
 		return;
 
 	switch (frame->msg_type) {
+	case ANALOG_8000HZ:
+		if (p_g_media_type != MEDIA_TYPE_ANALOG) {
+			PERROR("'Analog' frame, but current media type mismatches.\n");
+			return;
+		}
+		for (i = 0; i < 160; i++) {
+			data[i] = audio_s16_to_law[((int16_t *)frame->data)[i] & 0xffff];
+		}
+		break;
 	case GSM_TCHF_FRAME:
 		if (p_g_media_type != MEDIA_TYPE_GSM) {
 			PERROR("FR frame, but current media type mismatches.\n");
@@ -450,6 +459,9 @@ int Pgsm::audio_send(unsigned char *data, int len)
 		p_g_rxpos = 0;
 
 		switch (p_g_media_type) {
+		case MEDIA_TYPE_ANALOG:
+			frame_send(p_g_rxdata, 320, ANALOG_8000HZ);
+			break;
 		case MEDIA_TYPE_GSM:
 			if (!p_g_fr_encoder) {
 				PERROR("FR frame, but encoder not created.\n");
@@ -1254,6 +1266,9 @@ static int mncc_send(struct lcr_gsm *lcr_gsm, int msg_type, void *data)
 
 	/* FIXME: the caller should provide this */
 	switch (msg_type) {
+	case ANALOG_8000HZ:
+		len = sizeof(struct gsm_data_frame) + 320;
+		break;
 	case GSM_TCHF_FRAME:
 		len = sizeof(struct gsm_data_frame) + 33;
 		break;
