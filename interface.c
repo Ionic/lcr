@@ -907,17 +907,22 @@ static int inter_gsm_bs(struct interface *interface, char *filename, int line, c
 #else
 	struct interface *searchif;
 
+	interface->gsm_bs = 1;
+
+	if (!value)
+		interface->gsm_bs_name[0] = '\0';
+	else
+		SCPY(interface->gsm_bs_name, value);
+
+	/* check if name is used multiple times */
 	searchif = interface_newlist;
 	while(searchif) {
-		if (searchif->gsm_bs) {
-			SPRINT(interface_error, "Error in %s (line %d): interface '%s' already uses gsm BS side.\n", filename, line, searchif->name);
+		if (searchif != interface && searchif->gsm_bs && !strcmp(searchif->gsm_bs_name, interface->gsm_bs_name)) {
+			SPRINT(interface_error, "Error in %s (line %d): network '%s' already uses the given MS name '%s', choose a different one.\n", filename, line, interface->gsm_bs_name, searchif->gsm_bs_name);
 			return(-1);
 		}
 		searchif = searchif->next;
 	}
-
-	/* goto end of chain again to set gsmflag */
-	interface->gsm_bs = 1;
 
 	return(0);
 #endif
@@ -953,7 +958,7 @@ static int inter_gsm_ms(struct interface *interface, char *filename, int line, c
 	/* check if name is used multiple times */
 	searchif = interface_newlist;
 	while(searchif) {
-		if (searchif != interface && !strcmp(searchif->gsm_ms_name, interface->gsm_ms_name)) {
+		if (searchif != interface && searchif->gsm_bs && !strcmp(searchif->gsm_ms_name, interface->gsm_ms_name)) {
 			SPRINT(interface_error, "Error in %s (line %d): mobile '%s' already uses the given MS name '%s', choose a different one.\n", filename, line, interface->gsm_ms_name, searchif->gsm_ms_name);
 			return(-1);
 		}
@@ -1352,15 +1357,15 @@ struct interface_param interface_param[] = {
 
 	{"gsm", &inter_gsm, "",
 	""},
-	{"gsm-bs", &inter_gsm_bs, "",
-	"Sets up GSM base station interface for using OpenBSC."},
+	{"gsm-bs", &inter_gsm_bs, "[<socket name>]",
+	"Sets up GSM base station interface for using OpenBSC.\n"
+	"The socket is /tmp/bsc_mncc by default. If socket name is given, the socket will be\n"
+	"extended to /tmp/bsc_mncc_<socket name>."},
 	{"hr", &inter_gsm_bs_hr, "",
 	"Enable and prefer half rate for mobile terminating calls."},
-	{"gsm-ms", &inter_gsm_ms, "<socket>",
+	{"gsm-ms", &inter_gsm_ms, "<socket name>",
 	"Sets up GSM mobile station interface for using Osmocom-BB.\n"
-	"The name of the MS folows the interface name.\n"
-	"The socket is /tmp/osmocom_l2 by default and need to be changed when multiple\n"
-	"MS interfaces are used."},
+	"The socket will be /tmp/ms_mncc_<socket name>."},
 	{"sip", &inter_sip, "<local IP> <remote IP>",
 	"Sets up SIP interface that represents one SIP endpoint.\n"
 	"Give SIP configuration file."},
@@ -1697,7 +1702,7 @@ void relink_interfaces(void)
 #endif
 #ifdef WITH_GSM_BS
 			if (interface->gsm_bs)
-				gsm_bs_exit(0);
+				gsm_bs_delete(interface->gsm_bs_name);
 #endif
 #ifdef WITH_SIP
 			if (interface->sip)
@@ -1732,7 +1737,7 @@ void relink_interfaces(void)
 #endif
 #ifdef WITH_GSM_BS
 			if (interface->gsm_bs)
-				gsm_bs_init(interface);
+				gsm_bs_new(interface);
 #endif
 #ifdef WITH_SIP
 			if (interface->sip)

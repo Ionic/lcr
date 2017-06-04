@@ -397,14 +397,11 @@ int main(int argc, char *argv[])
 		goto free;
 	}
 #endif
-#if 0
-init is done when interface is up
 #ifdef WITH_GSM_BS
 	if (gsm_bs_init()) {
 		fprintf(stderr, "GSM BS initialization failed.\n");
 		goto free;
 	}
-#endif
 #endif
 #ifdef WITH_GSM_MS
 	if (gsm_ms_init()) {
@@ -618,11 +615,8 @@ free:
 #endif
 
 	/* free gsm */
-#if 0
-exit is done when interface is down
 #ifdef WITH_GSM_BS
 	gsm_bs_exit(0);
-#endif
 #endif
 #ifdef WITH_GSM_MS
 	gsm_ms_exit(0);

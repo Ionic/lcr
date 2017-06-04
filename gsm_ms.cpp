@@ -40,7 +40,7 @@ Pgsm_ms::Pgsm_ms(int type, char *portname, struct port_settings *settings, struc
 			p_g_lcr_gsm = gsm_ms;
 			break;
 		}
-		gsm_ms = gsm_ms->gsm_ms_next;
+		gsm_ms = gsm_ms->gsm_next;
 	}
 
 	p_g_dtmf_state = DTMF_ST_IDLE;
@@ -332,40 +332,24 @@ reject:
 /*
  * MS sends message to port
  */
-int message_ms(struct lcr_gsm *gsm_ms, int msg_type, void *arg)
+int message_ms(class Pgsm_ms *pgsm_ms, struct lcr_gsm *gsm_ms, int msg_type, void *arg)
 {
 	struct gsm_mncc *mncc = (struct gsm_mncc *)arg;
 	unsigned int callref = mncc->callref;
-	class Port *port;
-	class Pgsm_ms *pgsm_ms = NULL;
 	char name[64];
-//	struct mISDNport *mISDNport;
 
 	/* Special messages */
 	switch (msg_type) {
 	}
 
-	/* find callref */
-	callref = mncc->callref;
-	port = port_first;
-	while(port) {
-		if ((port->p_type & PORT_CLASS_GSM_MASK) == PORT_CLASS_GSM_MS) {
-			pgsm_ms = (class Pgsm_ms *)port;
-			if (pgsm_ms->p_g_callref == callref) {
-				break;
-			}
-		}
-		port = port->next;
-	}
-
 	if (msg_type == GSM_TCHF_FRAME
 	 || msg_type == GSM_BAD_FRAME) {
-		if (port)
+		if (pgsm_ms)
 			pgsm_ms->frame_receive(arg);
 		return 0;
 	}
 
-	if (!port) {
+	if (!pgsm_ms) {
 		struct interface *interface;
 
 		if (msg_type != MNCC_SETUP_IND)
@@ -726,8 +710,8 @@ int gsm_ms_new(struct interface *interface)
 	struct lcr_gsm *gsm_ms = gsm_ms_first, **gsm_ms_p = &gsm_ms_first;
 
 	while (gsm_ms) {
-		gsm_ms_p = &gsm_ms->gsm_ms_next;
-		gsm_ms = gsm_ms->gsm_ms_next;
+		gsm_ms_p = &gsm_ms->gsm_next;
+		gsm_ms = gsm_ms->gsm_next;
 	}
 
 	PDEBUG(DEBUG_GSM, "GSM: interface for MS '%s' is created\n", interface->gsm_ms_name);
@@ -755,50 +739,18 @@ int gsm_ms_new(struct interface *interface)
 int gsm_ms_delete(const char *name)
 {
 	struct lcr_gsm *gsm_ms = gsm_ms_first, **gsm_ms_p = &gsm_ms_first;
-//	class Port *port;
-//	class Pgsm_ms *pgsm_ms = NULL;
 
 	PDEBUG(DEBUG_GSM, "GSM: interface for MS '%s' is deleted\n", name);
 
 	while (gsm_ms) {
 		if (gsm_ms->type == LCR_GSM_TYPE_MS && !strcmp(gsm_ms->name, name))
 			break;
-		gsm_ms_p = &gsm_ms->gsm_ms_next;
-		gsm_ms = gsm_ms->gsm_ms_next;
+		gsm_ms_p = &gsm_ms->gsm_next;
+		gsm_ms = gsm_ms->gsm_next;
 	}
 
 	if (!gsm_ms)
 		return 0;
-
-/* not needed, because:
- * - shutdown of interface will destry port instances locally
- * - closing of socket will make remote socket destroy calls locally
- */
-#if 0
-	port = port_first;
-	while(port) {
-		if ((port->p_type & PORT_CLASS_GSM_MASK) == PORT_CLASS_GSM_MS) {
-			pgsm_ms = (class Pgsm_ms *)port;
-			if (pgsm_ms->p_g_lcr_gsm == gsm_ms && pgsm_ms->p_g_callref) {
-				struct gsm_mncc *rej;
-
-				rej = create_mncc(MNCC_REL_REQ, pgsm_ms->p_g_callref);
-				rej->fields |= MNCC_F_CAUSE;
-				rej->cause.coding = 3;
-				rej->cause.location = 1;
-				rej->cause.value = 27;
-				gsm_trace_header(NULL, NULL, MNCC_REJ_REQ, DIRECTION_OUT);
-				add_trace("cause", "coding", "%d", rej->cause.coding);
-				add_trace("cause", "location", "%d", rej->cause.location);
-				add_trace("cause", "value", "%d", rej->cause.value);
-				end_trace();
-				send_and_free_mncc(gsm_ms, rej->msg_type, rej);
-				pgsm_ms->new_state(PORT_STATE_RELEASE);
-				trigger_work(&pgsm_ms->p_g_delete);
-			}
-		}
-	}
-#endif
 
 	if (gsm_ms->mncc_lfd.fd > -1) {
 		close(gsm_ms->mncc_lfd.fd);
@@ -807,7 +759,7 @@ int gsm_ms_delete(const char *name)
 	del_timer(&gsm_ms->socket_retry);
 
 	/* remove instance from list */
-	*gsm_ms_p = gsm_ms->gsm_ms_next;
+	*gsm_ms_p = gsm_ms->gsm_next;
 	FREE(gsm_ms, sizeof(struct lcr_gsm));
 
 	return 0;

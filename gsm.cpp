@@ -667,7 +667,20 @@ void Pgsm::setup_cnf(unsigned int msg_type, unsigned int callref, struct gsm_mnc
 	SCPY(p_connectinfo.imsi, mncc->imsi);
 	p_connectinfo.present = INFO_PRESENT_ALLOWED;
 	p_connectinfo.screen = INFO_SCREEN_NETWORK;
-	p_connectinfo.ntype = INFO_NTYPE_UNKNOWN;
+	switch (mncc->connected.type) {
+		case 0x1:
+		p_connectinfo.ntype = INFO_NTYPE_INTERNATIONAL;
+		break;
+		case 0x2:
+		p_connectinfo.ntype = INFO_NTYPE_NATIONAL;
+		break;
+		case 0x4:
+		p_connectinfo.ntype = INFO_NTYPE_SUBSCRIBER;
+		break;
+		default:
+		p_connectinfo.ntype = INFO_NTYPE_UNKNOWN;
+		break;
+	}
 	SCPY(p_connectinfo.interface, p_interface_name);
 
 	gsm_trace_header(p_interface_name, this, msg_type, DIRECTION_IN);
@@ -1355,6 +1368,9 @@ static int mncc_fd_read(struct lcr_fd *lfd, void *inst, int idx)
 	static char buf[sizeof(struct gsm_mncc)+1024];
 	struct gsm_mncc *mncc_prim = (struct gsm_mncc *) buf;
 	struct gsm_mncc_hello *hello = (struct gsm_mncc_hello *) buf;
+	class Port *port;
+	class Pgsm *pgsm = NULL;
+	unsigned int callref;
 
 	memset(buf, 0, sizeof(buf));
 	rc = recv(lfd->fd, buf, sizeof(buf), 0);
@@ -1402,15 +1418,31 @@ static int mncc_fd_read(struct lcr_fd *lfd, void *inst, int idx)
 		break;
 	}
 
+	/* Find port object */
+	callref = mncc_prim->callref;
+	port = port_first;
+	while(port) {
+		if ((port->p_type & PORT_CLASS_MASK) == PORT_CLASS_GSM) {
+			pgsm = (class Pgsm *)port;
+			if (pgsm->p_g_lcr_gsm == lcr_gsm && pgsm->p_g_callref == callref)
+				break;
+		}
+		port = port->next;
+	}
+
 	/* Hand the MNCC message into LCR */
 	switch (lcr_gsm->type) {
 #ifdef WITH_GSM_BS
 	case LCR_GSM_TYPE_NETWORK:
-		return message_bsc(lcr_gsm, mncc_prim->msg_type, mncc_prim);
+		if (port && (port->p_type & PORT_CLASS_GSM_MASK) != PORT_CLASS_GSM_BS)
+			FATAL("Port is set and bound to network socket, but is not of network type, please fix");
+		return message_bsc((class Pgsm_bs *)port, lcr_gsm, mncc_prim->msg_type, mncc_prim);
 #endif
 #ifdef WITH_GSM_MS
 	case LCR_GSM_TYPE_MS:
-		return message_ms(lcr_gsm, mncc_prim->msg_type, mncc_prim);
+		if (port && (port->p_type & PORT_CLASS_GSM_MASK) != PORT_CLASS_GSM_MS)
+			FATAL("Port is set and bound to mobile socket, but is not of mobile type, please fix");
+		return message_ms((class Pgsm_ms *)port, lcr_gsm, mncc_prim->msg_type, mncc_prim);
 #endif
 	default:
 		return 0;

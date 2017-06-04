@@ -12,7 +12,7 @@
 #include "main.h"
 #include "mncc.h"
 
-struct lcr_gsm *gsm_bs = NULL;
+struct lcr_gsm *gsm_bs_first = NULL;
 
 #define PAYLOAD_TYPE_GSM 3
 
@@ -49,11 +49,23 @@ void generate_dtmf(void)
  */
 Pgsm_bs::Pgsm_bs(int type, char *portname, struct port_settings *settings, struct interface *interface) : Pgsm(type, portname, settings, interface)
 {
-	p_g_lcr_gsm = gsm_bs;
+	struct lcr_gsm *gsm_bs = gsm_bs_first;
+
+	p_g_lcr_gsm = NULL;
+	SCPY(p_g_bs_name, interface->gsm_bs_name);
+
+	while (gsm_bs) {
+		if (gsm_bs->type == LCR_GSM_TYPE_NETWORK && !strcmp(gsm_bs->name, p_g_bs_name)) {
+			p_g_lcr_gsm = gsm_bs;
+			break;
+		}
+		gsm_bs = gsm_bs->gsm_next;
+	}
+
 	p_g_dtmf = NULL;
 	p_g_dtmf_index = 0;
 
-	PDEBUG(DEBUG_GSM, "Created new GSMBSPort(%s).\n", portname);
+	PDEBUG(DEBUG_GSM, "Created new GSMBSPort(%s %s).\n", portname, p_g_bs_name);
 }
 
 /*
@@ -180,6 +192,15 @@ void Pgsm_bs::call_conf_ind(unsigned int msg_type, unsigned int callref, struct 
 		/* modify to first given payload */
 		modify_lchan(media_types[0]);
 		p_g_payload_type = payload_types[0];
+	}
+
+	if (p_g_earlyb && !p_g_tch_connected) { /* only if ... */
+		struct gsm_mncc *frame;
+		gsm_trace_header(p_interface_name, this, MNCC_FRAME_RECV, DIRECTION_OUT);
+		end_trace();
+		frame = create_mncc(MNCC_FRAME_RECV, p_g_callref);
+		send_and_free_mncc(p_g_lcr_gsm, frame->msg_type, frame);
+		p_g_tch_connected = 1;
 	}
 }
 
@@ -507,7 +528,20 @@ reject:
 		p_callerinfo.present = INFO_PRESENT_NOTAVAIL;
 	SCPY(p_callerinfo.imsi, mncc->imsi);
 	p_callerinfo.screen = INFO_SCREEN_NETWORK;
-	p_callerinfo.ntype = INFO_NTYPE_UNKNOWN;
+	switch (mncc->calling.type) {
+		case 0x1:
+		p_callerinfo.ntype = INFO_NTYPE_INTERNATIONAL;
+		break;
+		case 0x2:
+		p_callerinfo.ntype = INFO_NTYPE_NATIONAL;
+		break;
+		case 0x4:
+		p_callerinfo.ntype = INFO_NTYPE_SUBSCRIBER;
+		break;
+		default:
+		p_callerinfo.ntype = INFO_NTYPE_UNKNOWN;
+		break;
+	}
 	SCPY(p_callerinfo.interface, p_interface_name);
 
 	/* dialing information */
@@ -660,30 +694,14 @@ reject:
 /*
  * BSC sends message to port
  */
-int message_bsc(struct lcr_gsm *lcr_gsm, int msg_type, void *arg)
+int message_bsc(class Pgsm_bs *pgsm_bs, struct lcr_gsm *lcr_gsm, int msg_type, void *arg)
 {
 	struct gsm_mncc *mncc = (struct gsm_mncc *)arg;
 	unsigned int callref = mncc->callref;
-	class Port *port;
-	class Pgsm_bs *pgsm_bs = NULL;
 	char name[64];
-//	struct mISDNport *mISDNport;
 
 	/* Special messages */
 	switch(msg_type) {
-	}
-
-	/* find callref */
-	callref = mncc->callref;
-	port = port_first;
-	while(port) {
-		if ((port->p_type & PORT_CLASS_GSM_MASK) == PORT_CLASS_GSM_BS) {
-			pgsm_bs = (class Pgsm_bs *)port;
-			if (pgsm_bs->p_g_callref == callref) {
-				break;
-			}
-		}
-		port = port->next;
 	}
 
 	if (msg_type == GSM_TCHF_FRAME
@@ -692,7 +710,7 @@ int message_bsc(struct lcr_gsm *lcr_gsm, int msg_type, void *arg)
 	 || msg_type == GSM_TCH_FRAME_AMR
 	 || msg_type == ANALOG_8000HZ
 	 || msg_type == GSM_BAD_FRAME) {
-		if (port) {
+		if (pgsm_bs) {
 			/* inject DTMF, if enabled */
 			if (pgsm_bs->p_g_dtmf) {
 				unsigned char data[160];
@@ -720,7 +738,7 @@ int message_bsc(struct lcr_gsm *lcr_gsm, int msg_type, void *arg)
 		return 0;
 	}
 
-	if (!port) {
+	if (!pgsm_bs) {
 		struct interface *interface;
 
 		if (msg_type != MNCC_SETUP_IND)
@@ -1080,31 +1098,41 @@ int Pgsm_bs::message_epoint(unsigned int epoint_id, int message_id, union parame
 
 int gsm_bs_exit(int rc)
 {
-	/* free gsm instance */
-	if (gsm_bs) {
-		if (gsm_bs->mncc_lfd.fd > -1) {
-			close(gsm_bs->mncc_lfd.fd);
-			unregister_fd(&gsm_bs->mncc_lfd);
-		}
+	/* destroy all instances */
+	while (gsm_bs_first)
+		gsm_bs_delete(gsm_bs_first->name);
 
-		del_timer(&gsm_bs->socket_retry);
-		free(gsm_bs);
-		gsm_bs = NULL;
-	}
-
-
-	return(rc);
+	return rc;
 }
 
-int gsm_bs_init(struct interface *interface)
+int gsm_bs_init(void)
 {
+	return 0;
+}
+
+/* add a new GSM base station instance */
+int gsm_bs_new(struct interface *interface)
+{
+	struct lcr_gsm *gsm_bs = gsm_bs_first, **gsm_bs_p = &gsm_bs_first;
+
+	while (gsm_bs) {
+		gsm_bs_p = &gsm_bs->gsm_next;
+		gsm_bs = gsm_bs->gsm_next;
+	}
+
+	PDEBUG(DEBUG_GSM, "GSM: interface for BS '%s' is created\n", interface->gsm_bs_name);
+
 	/* create gsm instance */
 	gsm_bs = (struct lcr_gsm *)MALLOC(sizeof(struct lcr_gsm));
 
 	SCPY(gsm_bs->interface_name, interface->name);
 	gsm_bs->type = LCR_GSM_TYPE_NETWORK;
+	SCPY(gsm_bs->name, interface->gsm_bs_name);
 	gsm_bs->sun.sun_family = AF_UNIX;
-	SCPY(gsm_bs->sun.sun_path, "/tmp/bsc_mncc");
+	if (gsm_bs->name[0])
+		SPRINT(gsm_bs->sun.sun_path, "/tmp/bsc_mncc_%s", gsm_bs->name);
+	else
+		SCPY(gsm_bs->sun.sun_path, "/tmp/bsc_mncc");
 
 	memset(&gsm_bs->socket_retry, 0, sizeof(gsm_bs->socket_retry));
 	add_timer(&gsm_bs->socket_retry, mncc_socket_retry_cb, gsm_bs, 0);
@@ -1114,5 +1142,37 @@ int gsm_bs_init(struct interface *interface)
 
 	generate_dtmf();
 
+	*gsm_bs_p = gsm_bs;
+
 	return 0;
 }
+
+int gsm_bs_delete(const char *name)
+{
+	struct lcr_gsm *gsm_bs = gsm_bs_first, **gsm_bs_p = &gsm_bs_first;
+
+	PDEBUG(DEBUG_GSM, "GSM: interface for BS '%s' is deleted\n", name);
+	
+	while (gsm_bs) {
+		if (gsm_bs->type == LCR_GSM_TYPE_NETWORK && !strcmp(gsm_bs->name, name))
+			break;
+	        gsm_bs_p = &gsm_bs->gsm_next;
+		gsm_bs = gsm_bs->gsm_next;
+	}
+
+	if (!gsm_bs)
+		return 0;
+	
+	if (gsm_bs->mncc_lfd.fd > -1) {
+		close(gsm_bs->mncc_lfd.fd);
+		unregister_fd(&gsm_bs->mncc_lfd);
+	}
+	del_timer(&gsm_bs->socket_retry);
+
+	/* remove instance from list */
+	*gsm_bs_p = gsm_bs->gsm_next;
+	FREE(gsm_bs, sizeof(struct lcr_gsm));
+
+	return 0;
+}
+

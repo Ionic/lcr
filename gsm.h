@@ -16,8 +16,8 @@ enum {
 
 struct lcr_gsm {
 	char interface_name[64]; /* name of interface this instance is associated to */
-	struct lcr_gsm	*gsm_ms_next;	/* list of MS instances, in case of MS */
-	char		name[16];	/* name of MS instance, in case of MS */
+	struct lcr_gsm	*gsm_next;	/* list of MS/BS instances */
+	char		name[16];	/* name of MS/BS instance */
 	int		type;		/* LCR_GSM_TYPE_*/
 
 	struct lcr_fd	mncc_lfd;	/* Unix domain socket to OpenBSC MNCC */

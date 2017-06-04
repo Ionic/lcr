@@ -6,6 +6,7 @@ class Pgsm_bs : public Pgsm
 	Pgsm_bs(int type, char *portname, struct port_settings *settings, struct interface *interface);
 	~Pgsm_bs();
 
+	char p_g_bs_name[32];
 	unsigned char *p_g_dtmf; /* DTMF tone generation (MS only) */
 	int p_g_dtmf_index; /* DTMF tone generation index */
 
@@ -22,6 +23,8 @@ class Pgsm_bs : public Pgsm
 
 int gsm_bs_conf(struct gsm_conf *gsm_conf, char *conf_error);
 int gsm_bs_exit(int rc);
-int gsm_bs_init(struct interface *interface);
+int gsm_bs_init(void);
+int gsm_bs_new(struct interface *interface);
+int gsm_bs_delete(const char *name);
 
-int message_bsc(struct lcr_gsm *lcr_gsm, int msg_type, void *arg);
+int message_bsc(class Pgsm_bs *pgsm_bs, struct lcr_gsm *lcr_gsm, int msg_type, void *arg);

@@ -25,5 +25,5 @@ int gsm_ms_exit(int rc);
 int gsm_ms_init(void);
 int gsm_ms_new(struct interface *interface);
 int gsm_ms_delete(const char *name);
-int message_ms(struct lcr_gsm *lcr_gsm, int msg_type, void *arg);
+int message_ms(class Pgsm_ms *pgsm_ms, struct lcr_gsm *lcr_gsm, int msg_type, void *arg);
 
