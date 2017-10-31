@@ -549,15 +549,15 @@ free:
 	debug_count++;
 	join_free();
 
-	/* free interfaces */
-	if (interface_first)
-		free_interfaces(interface_first);
-	interface_first = NULL;
-
 #ifdef WITH_MISDN
 	/* close isdn ports */
 	mISDNport_close_all();
 #endif
+
+	/* free interfaces */
+	if (interface_first)
+		free_interfaces(interface_first);
+	interface_first = NULL;
 
 	/* flush messages */
 	debug_count++;

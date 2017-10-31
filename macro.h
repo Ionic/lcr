@@ -115,6 +115,8 @@ static inline char *_getline(char *buffer, int size, FILE *fp)
 		return buffer;
 	if (buffer[strlen(buffer)-1] == '\n')
 		buffer[strlen(buffer)-1] = '\0';
+	if (!buffer[0])
+		return buffer;
 	if (buffer[strlen(buffer)-1] == '\r')
 		buffer[strlen(buffer)-1] = '\0';
 	return buffer;

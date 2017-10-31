@@ -768,6 +768,7 @@ int Port::open_record(int type, int vbox, int skip, char *extension, int anon_ig
 		case CODEC_MONO:
 		case CODEC_STEREO:
 		case CODEC_8BIT:
+		memset(&dummyheader, 0, sizeof(dummyheader));
 		ret = fwrite(dummyheader, sizeof(dummyheader), 1, p_record);
 		break;
 

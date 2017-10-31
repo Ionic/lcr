@@ -405,6 +405,8 @@ static int _bchannel_create(struct mISDNport *mISDNport, int i)
 	int ret;
 	struct sockaddr_mISDN addr;
 
+	memset(&addr, 0, sizeof(addr));
+
 	if (mISDNport->b_sock[i].inuse) {
 		PERROR("Error: Socket already created for index %d\n", i);
 		return(0);
@@ -1817,6 +1819,8 @@ int mISDN_getportbyname(int sock, int cnt, char *portname)
 	struct mISDN_devinfo devinfo;
 	int port = 0, ret;
 
+	memset(&devinfo, 0, sizeof(devinfo));
+
 	/* resolve name */
 	while (port < cnt) {
 		devinfo.id = port;
@@ -1891,6 +1895,8 @@ struct mISDNport *mISDNport_open(struct interface_port *ifport)
 //	struct mlayer3 *ml3;
 	struct mISDN_devinfo devinfo;
 	unsigned int protocol, prop;
+
+	memset(&devinfo, 0, sizeof(devinfo));
 
 	/* check port counts */
 	ret = ioctl(mISDNsocket, IMGETCOUNT, &cnt);
