@@ -15,6 +15,14 @@
 #include <sofia-sip/sdp.h>
 #include <sofia-sip/sip_header.h>
 
+#ifndef SOFIA_SIP_GCC_4_8_PATCH_APLLIED
+#warning ********************************************************
+#warning Please apply the sofia-sip-gcc-4.8.patch !
+#warning If this issue is already fixed, just remove this check.
+#warning ********************************************************
+#error
+#endif
+
 #undef NUTAG_AUTO100
 
 unsigned char flip[256];
@@ -851,6 +859,12 @@ int Psip::message_connect(unsigned int epoint_id, int message_id, union paramete
 		, inet_ntoa(ia), inet_ntoa(ia), p_s_rtp_port_local, payload_type, payload_type, media_type2name(media_type));
 	PDEBUG(DEBUG_SIP, "Using SDP response: %s\n", sdp_str);
 
+	/* NOTE:
+	 * If this response causes corrupt messages, like SDP body inside or
+	 * before header, check if the sofia-sip-gcc-4.8.patch was applied.
+	 * If it is still corrupted, try to disable optimization when compiling
+	 * sofia-sip.
+	 */
 	nua_respond(p_s_handle, SIP_200_OK,
 		NUTAG_MEDIA_ENABLE(0),
 		SIPTAG_CONTENT_TYPE_STR("application/sdp"),
