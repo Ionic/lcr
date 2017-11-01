@@ -25,11 +25,7 @@ doku:
 
 sip:
 
-- blockiert der prozess beim lookup? (also invite oder register bei dns-unerreichbarkeit)
-- feste ip statt stun
-- ankommende registrierung
-- earlyb testen (siehe interface.conf)
-- callerid als display-info
+- ankommende authentisierung
 
 routing:
 - ersetzten-operator

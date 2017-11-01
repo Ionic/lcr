@@ -974,16 +974,204 @@ static int inter_sip(struct interface *interface, char *filename, int line, char
 
 	/* copy values */
 	if (!value || !value[0]) {
-		SPRINT(interface_error, "Error in %s (line %d): Missing SIP local IP.\n", filename, line);
+		SPRINT(interface_error, "Error in %s (line %d): Missing SIP local peer.\n", filename, line);
+		return(-1);
+	}
+	p = get_seperated(value);
+	SCPY(interface->sip_local_peer, value);
+	SCPY(interface->sip_remote_peer, p);
+
+	return(0);
+#endif
+}
+static int inter_authenticate(struct interface *interface, char *filename, int line, char *parameter, char *value)
+{
+#ifndef WITH_SIP
+	SPRINT(interface_error, "Error in %s (line %d): SIP not compiled in.\n", filename, line);
+	return(-1);
+#else
+	char *p, *q;
+
+	if (!interface->sip) {
+		SPRINT(interface_error, "Error in %s (line %d): This is not a SIP interface.\n", filename, line);
+		return(-1);
+	}
+
+	/* copy values */
+	if (!value || !value[0]) {
+		SPRINT(interface_error, "Error in %s (line %d): Missing SIP user.\n", filename, line);
 		return(-1);
 	}
 	p = get_seperated(value);
 	if (!p[0]) {
-		SPRINT(interface_error, "Error in %s (line %d): Missing SIP remote IP.\n", filename, line);
+		SPRINT(interface_error, "Error in %s (line %d): Missing SIP password.\n", filename, line);
 		return(-1);
 	}
-	SCPY(interface->sip_local_peer, value);
-	SCPY(interface->sip_remote_peer, p);
+	q = get_seperated(p);
+	SCPY(interface->sip_auth_user, value);
+	SCPY(interface->sip_auth_password, p);
+	if (q[0])
+		SCPY(interface->sip_auth_realm, q);
+
+	return(0);
+#endif
+}
+static int options_interval(struct interface *interface, char *filename, int line, char *parameter, char *value)
+{
+#ifndef WITH_SIP
+	SPRINT(interface_error, "Error in %s (line %d): SIP not compiled in.\n", filename, line);
+	return(-1);
+#else
+	if (!interface->sip) {
+		SPRINT(interface_error, "Error in %s (line %d): This is not a SIP interface.\n", filename, line);
+		return(-1);
+	}
+
+	if (!value || !value[0]) {
+		SPRINT(interface_error, "Error in %s (line %d): Missing options interval.\n", filename, line);
+		return(-1);
+	}
+	interface->sip_options_interval = atoi(value);
+
+	return(0);
+#endif
+}
+static int options_asserted_id(struct interface *interface, char *filename, int line, char *parameter, char *value)
+{
+#ifndef WITH_SIP
+	SPRINT(interface_error, "Error in %s (line %d): SIP not compiled in.\n", filename, line);
+	return(-1);
+#else
+	if (!interface->sip) {
+		SPRINT(interface_error, "Error in %s (line %d): This is not a SIP interface.\n", filename, line);
+		return(-1);
+	}
+
+	if (!value || !value[0]) {
+		SPRINT(interface_error, "Error in %s (line %d): Missing asserted caller ID.\n", filename, line);
+		return(-1);
+	}
+	SCPY(interface->sip_asserted_id, value);
+
+	return(0);
+#endif
+}
+static int options_public(struct interface *interface, char *filename, int line, char *parameter, char *value)
+{
+#ifndef WITH_SIP
+	SPRINT(interface_error, "Error in %s (line %d): SIP not compiled in.\n", filename, line);
+	return(-1);
+#else
+	if (!interface->sip) {
+		SPRINT(interface_error, "Error in %s (line %d): This is not a SIP interface.\n", filename, line);
+		return(-1);
+	}
+	if (interface->sip_stun_server[0]) {
+		SPRINT(interface_error, "Error in %s (line %d): Don't specify STUN, if you want to define public IP.\n", filename, line);
+		return(-1);
+	}
+
+	if (!value || !value[0]) {
+		SPRINT(interface_error, "Error in %s (line %d): Missing public IP.\n", filename, line);
+		return(-1);
+	}
+	SCPY(interface->sip_public_ip, value);
+
+	return(0);
+#endif
+}
+static int options_stun(struct interface *interface, char *filename, int line, char *parameter, char *value)
+{
+#ifndef WITH_SIP
+	SPRINT(interface_error, "Error in %s (line %d): SIP not compiled in.\n", filename, line);
+	return(-1);
+#else
+	char *p;
+
+	if (!interface->sip) {
+		SPRINT(interface_error, "Error in %s (line %d): This is not a SIP interface.\n", filename, line);
+		return(-1);
+	}
+	if (interface->sip_public_ip[0]) {
+		SPRINT(interface_error, "Error in %s (line %d): Don't specify public IP, if you want to define STUN.\n", filename, line);
+		return(-1);
+	}
+
+	if (!value || !value[0]) {
+		SPRINT(interface_error, "Error in %s (line %d): Missing STUN server.\n", filename, line);
+		return(-1);
+	}
+	p = get_seperated(value);
+	if (!p[0]) {
+		SPRINT(interface_error, "Error in %s (line %d): Missing STUN timer.\n", filename, line);
+		return(-1);
+	}
+	SCPY(interface->sip_stun_server, value);
+	interface->sip_stun_interval = atoi(p);
+
+	return(0);
+#endif
+}
+static int inter_rtp_ports(struct interface *interface, char *filename, int line, char *parameter, char *value)
+{
+#ifndef WITH_SIP
+	SPRINT(interface_error, "Error in %s (line %d): SIP not compiled in.\n", filename, line);
+	return(-1);
+#else
+	char *p;
+
+	if (!interface->sip) {
+		SPRINT(interface_error, "Error in %s (line %d): This is not a SIP interface.\n", filename, line);
+		return(-1);
+	}
+
+	/* copy values */
+	if (!value || !value[0]) {
+		SPRINT(interface_error, "Error in %s (line %d): Missing 'from' port.\n", filename, line);
+		return(-1);
+	}
+	p = get_seperated(value);
+	if (!p[0]) {
+		SPRINT(interface_error, "Error in %s (line %d): Missing 'to' port.\n", filename, line);
+		return(-1);
+	}
+	interface->rtp_port_from = atoi(value);
+	interface->rtp_port_to = atoi(p);
+
+	return(0);
+#endif
+}
+static int inter_register(struct interface *interface, char *filename, int line, char *parameter, char *value)
+{
+#ifndef WITH_SIP
+	SPRINT(interface_error, "Error in %s (line %d): SIP not compiled in.\n", filename, line);
+	return(-1);
+#else
+	char *p, *q;
+
+	if (!interface->sip) {
+		SPRINT(interface_error, "Error in %s (line %d): This is not a SIP interface.\n", filename, line);
+		return(-1);
+	}
+
+	/* copy values */
+	if (!value || !value[0]) {
+		SPRINT(interface_error, "Error in %s (line %d): Missing SIP user.\n", filename, line);
+		return(-1);
+	}
+	p = get_seperated(value);
+	if (!p[0]) {
+		SPRINT(interface_error, "Error in %s (line %d): Missing SIP host\n", filename, line);
+		return(-1);
+	}
+	q = get_seperated(p);
+	if (!q[0])
+		interface->sip_register_interval = 0;
+	else
+		interface->sip_register_interval = atoi(q);
+	interface->sip_register = 1;
+	SCPY(interface->sip_register_user, value);
+	SCPY(interface->sip_register_host, p);
 
 	return(0);
 #endif
@@ -1307,7 +1495,7 @@ struct interface_param interface_param[] = {
 	{"timeouts", &inter_timeouts, "<setup> <dialing> <proceeding> <alerting> <disconnect>",
 	"Timeout values for call states. They are both for incoming and outgoing states.\n"
 	"The default is 120 seconds for all states. Use 0 to disable.\n"
-	"This parameter must follow a 'port' parameter.\n"},
+	"This parameter must follow a 'port' parameter."},
 
 	{"msn", &inter_msn, "<default MSN>,[<additional MSN>[,...]]",
 	"Incoming caller ID is checked against given MSN numbers.\n"
@@ -1345,12 +1533,11 @@ struct interface_param interface_param[] = {
 	{"dialmax", &inter_dialmax, "<digits>",
 	"Limits the number of digits in setup/information message."},
 
-	{"tones_dir", &inter_tones_dir, "<path>",
-	"Overrides the given tone_dir in options.conf.\n"
-	"To used kernel tones in mISDN_dsp.ko, say 'american', 'german', or 'oldgerman'."},
 	{"tones-dir", &inter_tones_dir, "<path>",
 	"Overrides the given tone_dir in options.conf.\n"
 	"To used kernel tones in mISDN_dsp.ko, say 'american', 'german', or 'oldgerman'."},
+	{"tones_dir", &inter_tones_dir, "<path>",
+	"Same as tones-dir"},
 
 	{"gsm", &inter_gsm, "",
 	""},
@@ -1363,24 +1550,45 @@ struct interface_param interface_param[] = {
 	{"gsm-ms", &inter_gsm_ms, "<socket name>",
 	"Sets up GSM mobile station interface for using Osmocom-BB.\n"
 	"The socket will be /tmp/ms_mncc_<socket name>."},
-	{"sip", &inter_sip, "<local IP> <remote IP>",
+
+	{"sip", &inter_sip, "<local IP/host>[:port] [<remote IP/host>[port]]",
 	"Sets up SIP interface that represents one SIP endpoint.\n"
-	"Give SIP configuration file."},
+	"If the remote IP/host is omitted, a client must register first to us."},
+	{"register", &inter_register, "<user> <host> [options-interval]",
+	"Registers to given SIP registrar.\n"
+	"Optionally give SIP timer to send OPTIONS messages to keepalive REGISTER sessions."},
+	{"authenticate", &inter_authenticate, "<user> <password> [realm]",
+	"Defines SIP user and password for authentication.\n"
+	"If no remote IP was give, we are SIP gateway, so realm must be given also."},
+	{"options-interval", &options_interval, "<interval> | 0",
+	"Defines SIP timer to send OPTIONS messages to keepalive INVITE sessions."},
+	{"asserted-id", &options_asserted_id, "<caller-id>",
+	"Defines SIP's asserted-id in INVITE message."},
+	{"public", &options_public, "<server> <interval>",
+	"Defines public IP, if this endpoint is behind NAT firewall."},
+	{"stun", &options_stun, "<server> <interval>",
+	"Defines STUN server to resolv real local IP.\n"
+	"The interval is used to check if IP has changed. (use 300)"},
+	{"rtp-ports", &inter_rtp_ports, "<port from> <port to>",
+	"Defines the range of ports to be used for RTP. This overrides the default."},
+
 	{"rtp-bridge", &inter_rtp_bridge, "",
 	"Enables RTP bridging directly from this interface.\n"
 	"This only works if both bridged interfaces use RTP, e.g. between gsm-bs and sip.\n"
-	"This parameter must follow a 'bridge' parameter.\n"},
+	"This parameter must follow a 'bridge' parameter."},
 #if 0
 	not needed, since ms defines what is supports and remote (sip) tells what is selected
 	{"rtp-payload", &inter_rtp_payload, "<codec>",
 	"Define RTP payload to use. Only valid in conjuntion with gsm-bs!\n"
 	"If multiple payloads are defined, the first has highest priority.\n"
-	"If none are defined, GSM fullrate V1 (type 3) is assumed.\n"},
+	"If none are defined, GSM fullrate V1 (type 3) is assumed."},
 #endif
+
 	{"nonotify", &inter_nonotify, "",
 	"Prevents sending notify messages to this interface. A call placed on hold will\n"
 	"Not affect the remote end (phone or telcom switch).\n"
 	"This parameter must follow a 'port' parameter."},
+
 	{"bridge", &inter_bridge, "<destination interface>",
 	"Define bridge application for this interface. All calls received on this\n"
 	"interface will be directly bridged to the given destination interface.\n"
@@ -1412,17 +1620,17 @@ struct interface_param interface_param[] = {
 	{"pots-flash", &inter_pots_flash, "",
 	"Allow flash button to hold an active call and setup a new call.\n"
 	"Ihis parameter only appies to POTS type of interfaces\n"
-	"This parameter must follow a 'port' parameter.\n"},
+	"This parameter must follow a 'port' parameter."},
 	{"pots-ring-after-hangup", &inter_pots_ring, "",
 	"Allow ringing of last hold call after hangup. Other calls on hold will not be\n"
 	"released.\n"
 	"Ihis parameter only appies to POTS type of interfaces\n"
-	"This parameter must follow a 'port' parameter.\n"},
+	"This parameter must follow a 'port' parameter."},
 	{"pots-transfer-after-hangup", &inter_pots_transfer, "",
 	"If two calls on hold, both are connected after hangup.\n"
 	"If one call is on hold and another one alerting, call on hold is tranfered.\n"
 	"Ihis parameter only appies to POTS type of interfaces\n"
-	"This parameter must follow a 'port' parameter.\n"},
+	"This parameter must follow a 'port' parameter."},
 
 	{"shutdown", &inter_shutdown, "",
 	"Interface will not be loaded when processing interface.conf"},

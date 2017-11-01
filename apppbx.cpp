@@ -1278,7 +1278,7 @@ int cfnr_call_timeout(struct lcr_timer *timer, void *instance, int index)
 {
 	class EndpointAppPBX *ea = (class EndpointAppPBX *)instance;
 
-	PDEBUG(DEBUG_EPOINT, "EPOINT(%d) call-forward-busy time has expired, calling the forwarded number: %s.\n", ea->ea_endpoint->ep_serial, ea->e_ext.cfnr);
+	PDEBUG(DEBUG_EPOINT, "EPOINT(%d) call-forward-no-response time has expired, calling the forwarded number: %s.\n", ea->ea_endpoint->ep_serial, ea->e_ext.cfnr);
 	ea->out_setup(1);
 
 	return 0;

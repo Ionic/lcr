@@ -14,6 +14,9 @@
 #include <sofia-sip/su_log.h>
 #include <sofia-sip/sdp.h>
 #include <sofia-sip/sip_header.h>
+#include <sofia-sip/stun.h>
+#include <sofia-sip/stun_tag.h>
+#include <sofia-sip/su_md5.h>
 
 #ifndef SOFIA_SIP_GCC_4_8_PATCH_APLLIED
 #warning ********************************************************
@@ -32,15 +35,59 @@ int any_sip_interface = 0;
 //pthread_mutex_t mutex_msg;
 su_home_t	sip_home[1];
 
+#define REGISTER_STATE_UNREGISTERED	1
+#define REGISTER_STATE_REGISTERING	2
+#define REGISTER_STATE_REGISTERED	3
+#define REGISTER_STATE_FAILED		4
+
+#define STUN_RETRY_TIMER		10, 0
+#define REGISTER_RETRY_TIMER		10, 0
+
+#define STUN_STATE_UNRESOLVED		1
+#define STUN_STATE_RESOLVING		2
+#define STUN_STATE_RESOLVED		3
+#define STUN_STATE_FAILED		4
+
+#define RTP_PORT_BASE	30000
+#define RTP_PORT_MAX	39998
+
 struct sip_inst {
 	char			interface_name[64];
-	char			local_peer[32];
-	char			remote_peer[32];
+	char			local_peer[128];
+	char			remote_peer[128];
+	char			asserted_id[128];
+	int			allow_register;
+	int			register_state;
+	char			register_user[128];
+	char			register_host[128];
+	nua_handle_t		*register_handle;
+	struct lcr_timer 	register_retry_timer;
+	struct lcr_timer 	register_option_timer;
+	int			register_interval;
+	int			options_interval;
+	char			auth_user[128];
+	char			auth_password[128];
+	char			auth_realm[128];
+	char			auth_nonce[128];
 	su_root_t		*root;
 	nua_t			*nua;
+
+	char			public_ip[128];
+	int			stun_state;
+	char			stun_server[128];
+	stun_handle_t		*stun_handle;
+	su_socket_t		stun_socket;
+	struct lcr_timer 	stun_retry_timer;
+	int			stun_interval;
+
+	unsigned short		rtp_port_from;
+	unsigned short		rtp_port_to;
+	unsigned short		next_rtp_port;
+
 };
 
 static int delete_event(struct lcr_work *work, void *instance, int index);
+static int invite_option_timer(struct lcr_timer *timer, void *instance, int index);
 static int load_timer(struct lcr_timer *timer, void *instance, int index);
 
 /*
@@ -71,10 +118,16 @@ Psip::Psip(int type, char *portname, struct port_settings *settings, struct inte
 	p_s_b_active = 0;
 	p_s_rxpos = 0;
 	p_s_rtp_tx_action = 0;
+	p_s_rtp_is_connected = 0;
+
+	/* create option timer */
+	memset(&p_s_invite_option_timer, 0, sizeof(p_s_invite_option_timer));
+        add_timer(&p_s_invite_option_timer, invite_option_timer, this, 0);
+	p_s_invite_direction = 0;
 
 	/* audio */
-	memset(&p_s_loadtimer, 0, sizeof(p_s_loadtimer));
-	add_timer(&p_s_loadtimer, load_timer, this, 0);
+	memset(&p_s_load_timer, 0, sizeof(p_s_load_timer));
+	add_timer(&p_s_load_timer, load_timer, this, 0);
 	p_s_next_tv_sec = 0;
 
 	PDEBUG(DEBUG_SIP, "Created new Psip(%s).\n", portname);
@@ -90,7 +143,8 @@ Psip::~Psip()
 {
 	PDEBUG(DEBUG_SIP, "Destroyed SIP process(%s).\n", p_name);
 
-	del_timer(&p_s_loadtimer);
+	del_timer(&p_s_invite_option_timer);
+	del_timer(&p_s_load_timer);
 	del_work(&p_s_delete);
 
 	rtp_close();
@@ -115,11 +169,16 @@ static const char *media_type2name(uint8_t media_type) {
 	return "UKN";
 }
 
-static void sip_trace_header(class Psip *sip, const char *message, int direction)
+static void sip_trace_header(class Psip *sip, const char *interface_name, const char *message, int direction)
 {
+	struct interface *interface = NULL;
+
+	if (interface_name)
+		interface = getinterfacebyname(interface_name);
+
 	/* init trace with given values */
 	start_trace(-1,
-		    NULL,
+		    interface,
 		    sip?numberrize_callerinfo(sip->p_callerinfo.id, sip->p_callerinfo.ntype, options.national, options.international):NULL,
 		    sip?sip->p_dialinginfo.id:NULL,
 		    direction,
@@ -337,10 +396,6 @@ static int rtcp_sock_callback(struct lcr_fd *fd, unsigned int what, void *instan
 	return 0;
 }
 
-#define RTP_PORT_BASE	30000
-#define RTP_PORT_MAX	39998
-static unsigned short next_udp_port = RTP_PORT_BASE;
-
 static int rtp_sub_socket_bind(int fd, struct sockaddr_in *sin_local, uint32_t ip, uint16_t port)
 {
 	int rc;
@@ -379,10 +434,13 @@ static int rtp_sub_socket_connect(int fd, struct sockaddr_in *sin_local, struct 
 
 int Psip::rtp_open(void)
 {
+	struct sip_inst *inst = (struct sip_inst *) p_s_sip_inst;
 	int rc, rc2;
-	struct in_addr ia;
+//	struct in_addr ia;
 	unsigned int ip;
 	unsigned short start_port;
+
+	PDEBUG(DEBUG_SIP, "rtp_open\n");
 
 	/* create socket */
 	rc = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -403,17 +461,16 @@ int Psip::rtp_open(void)
 
 	/* bind socket */
 	ip = htonl(INADDR_ANY);
-	ia.s_addr = ip;
-	start_port = next_udp_port;
+	start_port = inst->next_rtp_port;
 	while (1) {
-		rc = rtp_sub_socket_bind(p_s_rtp_fd.fd, &p_s_rtp_sin_local, ip, next_udp_port);
+		rc = rtp_sub_socket_bind(p_s_rtp_fd.fd, &p_s_rtp_sin_local, ip, inst->next_rtp_port);
 		if (rc != 0)
 			goto try_next_port;
 
-		rc = rtp_sub_socket_bind(p_s_rtcp_fd.fd, &p_s_rtcp_sin_local, ip, next_udp_port + 1);
+		rc = rtp_sub_socket_bind(p_s_rtcp_fd.fd, &p_s_rtcp_sin_local, ip, inst->next_rtp_port + 1);
 		if (rc == 0) {
-			p_s_rtp_port_local = next_udp_port;
-			next_udp_port = (next_udp_port + 2 > RTP_PORT_MAX) ? RTP_PORT_BASE : next_udp_port + 2;
+			p_s_rtp_port_local = inst->next_rtp_port;
+			inst->next_rtp_port = (inst->next_rtp_port + 2 > inst->rtp_port_to) ? inst->rtp_port_from : inst->next_rtp_port + 2;
 			break;
 		}
 		/* reopen rtp socket and try again with next udp port */
@@ -429,8 +486,8 @@ int Psip::rtp_open(void)
 		register_fd(&p_s_rtp_fd, LCR_FD_READ, rtp_sock_callback, this, 0);
 
 try_next_port:
-		next_udp_port = (next_udp_port + 2 > RTP_PORT_MAX) ? RTP_PORT_BASE : next_udp_port + 2;
-		if (next_udp_port == start_port)
+		inst->next_rtp_port = (inst->next_rtp_port + 2 > inst->rtp_port_to) ? inst->rtp_port_from : inst->next_rtp_port + 2;
+		if (inst->next_rtp_port == start_port)
 			break;
 		/* we must use rc2, in order to preserve rc */
 	}
@@ -452,6 +509,8 @@ int Psip::rtp_connect(void)
 	struct in_addr ia;
 
 	ia.s_addr = htonl(p_s_rtp_ip_remote);
+	if (p_s_rtp_is_connected)
+		PDEBUG(DEBUG_SIP, "reconnecting existing RTP connection to new/same destination\n");
 	PDEBUG(DEBUG_SIP, "rtp_connect(ip=%s, port=%u)\n", inet_ntoa(ia), p_s_rtp_port_remote);
 
 	rc = rtp_sub_socket_connect(p_s_rtp_fd.fd, &p_s_rtp_sin_local, &p_s_rtp_sin_remote, p_s_rtp_ip_remote, p_s_rtp_port_remote);
@@ -738,6 +797,9 @@ static int cause2status(int cause, int location, const char **st)
 	case 23:
 		s = 410; *st = sip_410_Gone;
 		break;
+	case 26:
+		s = 404; *st = sip_404_Not_found;
+		break;
 	case 27:
 		s = 502; *st = sip_502_Bad_gateway;
 		break;
@@ -795,11 +857,182 @@ static int cause2status(int cause, int location, const char **st)
 	case 102:
 		s = 504; *st = sip_504_Gateway_time_out;
 		break;
+	case 111:
+		s = 500; *st = sip_500_Internal_server_error;
+		break;
+	case 127:
+		s = 500; *st = sip_500_Internal_server_error;
+		break;
 	default:
 		s = 468; *st = sip_486_Busy_here;
 	}
 
 	return s;
+}
+
+/* use STUN ip, or return the ip without change */
+unsigned int Psip::get_local_ip(unsigned int ip)
+{
+	struct sip_inst *inst = (struct sip_inst *) p_s_sip_inst;
+
+	if (inst->public_ip[0]) {
+		PDEBUG(DEBUG_SIP, "RTP local IP is replaced by STUN ip %s\n", inst->public_ip);
+		inet_pton(AF_INET, inst->public_ip, &ip);
+		return htonl(ip);
+	}
+	return ip;
+}
+
+/* some simple nonce generator */
+static void generate_nonce(char *result)
+{
+	UPRINT(result, "%08x", (unsigned int)random());
+	result += 8;
+	UPRINT(result, "%08x", (unsigned int)random());
+	result += 8;
+	UPRINT(result, "%08x", (unsigned int)random());
+	result += 8;
+	UPRINT(result, "%08x", (unsigned int)random());
+}
+
+/* check authorization */
+static int check_authorization(sip_authorization_t const *authorization, const char *regstr, const char *check_user, const char *check_pass, const char *check_realm, const char *check_nonce, const char **auth_text)
+{
+	int ret = 500;
+	*auth_text = "Internal Server Error";
+
+	char *username = NULL;
+	char *realm = NULL;
+	char *nonce = NULL;
+	char *uri = NULL;
+	char *qop = NULL;
+	char *cnonce = NULL;
+	char *nc = NULL;
+	char *response = NULL;
+
+	int indexnum;
+        const char *cur;
+
+	char temp[256], first_digest[2 * SU_MD5_DIGEST_SIZE + 1], second_digest[2 * SU_MD5_DIGEST_SIZE + 1], third_digest[2 * SU_MD5_DIGEST_SIZE + 1];
+        su_md5_t md5_ctx;
+
+	if (!check_nonce || !check_nonce[0] || !authorization || !authorization->au_params) {
+		if (!strcmp(regstr, "REGISTER")) {
+			*auth_text = "Unauthorized";
+			ret = 401;
+		} else {
+			*auth_text = "Proxy Authentication Required";
+			ret = 407;
+		}
+		goto end;
+	}
+
+	/* parse header (stolen from freeswitch) */
+	for (indexnum = 0; (cur = authorization->au_params[indexnum]); indexnum++) {
+		char *var, *val, *p, *work;
+		var = val = work = NULL;
+		if ((work = strdup(cur))) {
+			var = work;
+			if ((val = strchr(var, '='))) {
+				*val++ = '\0';
+				while (*val == '"') {
+					*val++ = '\0';
+				}
+				if ((p = strchr(val, '"'))) {
+					*p = '\0';
+				}
+		
+				PDEBUG(DEBUG_SIP, "Found in Auth header: %s = %s\n", var, val);
+				if (!strcasecmp(var, "username")) {
+					username = strdup(val);
+				} else if (!strcasecmp(var, "realm")) {
+					realm = strdup(val);
+				} else if (!strcasecmp(var, "nonce")) {
+					nonce = strdup(val);
+				} else if (!strcasecmp(var, "uri")) {
+					uri = strdup(val);
+				} else if (!strcasecmp(var, "qop")) {
+					qop = strdup(val);
+				} else if (!strcasecmp(var, "cnonce")) {
+					cnonce = strdup(val);
+				} else if (!strcasecmp(var, "response")) {
+					response = strdup(val);
+				} else if (!strcasecmp(var, "nc")) {
+					nc = strdup(val);
+				}
+			}
+
+			free(work);
+		}
+	}
+
+	if (!username || !realm || !nonce || ! uri || !response) {
+		*auth_text = "Authorization header incomplete";
+		ret = 400;
+		goto end;
+	}
+
+	if (!!strcmp(username, check_user)) {
+		*auth_text = "Authorization Username Missmatch";
+		ret = 403;
+		goto end;
+	}
+	if (!!strcmp(realm, check_realm)) {
+		*auth_text = "Authorization Realm Missmatch";
+		ret = 403;
+		goto end;
+	}
+	if (!!strcmp(nonce, check_nonce)) {
+		*auth_text = "Authorization Nonce Missmatch";
+		ret = 403;
+		goto end;
+	}
+
+	/* perform hash */
+	SPRINT(temp, "%s:%s:%s", check_user, realm, check_pass);
+	PDEBUG(DEBUG_SIP, "First hash: %s\n", temp);
+	su_md5_init(&md5_ctx);
+	su_md5_strupdate(&md5_ctx, temp);
+	su_md5_hexdigest(&md5_ctx, first_digest);
+	su_md5_deinit(&md5_ctx);
+
+	SPRINT(temp, "%s:%s", regstr, uri);
+	PDEBUG(DEBUG_SIP, "Second hash: %s\n", temp);
+	su_md5_init(&md5_ctx);
+	su_md5_strupdate(&md5_ctx, temp);
+	su_md5_hexdigest(&md5_ctx, second_digest);
+	su_md5_deinit(&md5_ctx);
+
+	if (nc && cnonce && qop)
+		SPRINT(temp, "%s:%s:%s:%s:%s:%s", first_digest, nonce, nc, cnonce, qop, second_digest);
+	else
+		SPRINT(temp, "%s:%s:%s", first_digest, nonce, second_digest);
+	PDEBUG(DEBUG_SIP, "Third hash: %s\n", temp);
+	su_md5_init(&md5_ctx);
+	su_md5_strupdate(&md5_ctx, temp);
+	su_md5_hexdigest(&md5_ctx, third_digest);
+	su_md5_deinit(&md5_ctx);
+
+	if (!!strcmp(response, third_digest)) {
+		*auth_text = "Authorization Failed";
+		ret = 403;
+		goto end;
+	}
+
+	*auth_text = "Authorization Success";
+	ret = 200;
+
+end:
+	free(username);
+	free(realm);
+	free(nonce);
+	free(uri);
+	free(qop);
+	free(cnonce);
+	free(nc);
+	free(response);
+
+	return ret;
 }
 
 /*
@@ -808,11 +1041,18 @@ static int cause2status(int cause, int location, const char **st)
 
 int Psip::message_connect(unsigned int epoint_id, int message_id, union parameter *param)
 {
-	char sdp_str[256];
-	struct in_addr ia;
+	struct sip_inst *inst = (struct sip_inst *) p_s_sip_inst;
+	const char *sdp_str = NULL;
 	struct lcr_msg *message;
+	struct interface *interface;
 	int media_type;
 	unsigned char payload_type;
+
+	interface = getinterfacebyname(inst->interface_name);
+	if (!interface) {
+		PERROR("Cannot find interface %s.\n", inst->interface_name);
+		return 0;
+	}
 
 	if (param->connectinfo.rtpinfo.port) {
 		PDEBUG(DEBUG_SIP, "RTP info given by remote, forward that\n");
@@ -829,11 +1069,11 @@ int Psip::message_connect(unsigned int epoint_id, int message_id, union paramete
 		media_type = (options.law=='a') ? MEDIA_TYPE_ALAW : MEDIA_TYPE_ULAW;
 		payload_type = (options.law=='a') ? PAYLOAD_TYPE_ALAW : PAYLOAD_TYPE_ULAW;
 		/* open local RTP peer (if not bridging) */
-		if (!p_s_rtp_is_connected && rtp_connect() < 0) {
+		if (rtp_connect() < 0) {
 			nua_cancel(p_s_handle, TAG_END());
 			nua_handle_destroy(p_s_handle);
 			p_s_handle = NULL;
-			sip_trace_header(this, "CANCEL", DIRECTION_OUT);
+			sip_trace_header(this, inst->interface_name, "CANCEL", DIRECTION_OUT);
 			add_trace("reason", NULL, "failed to connect RTP/RTCP sockts");
 			end_trace();
 			message = message_create(p_serial, epoint_id, PORT_TO_EPOINT, MESSAGE_RELEASE);
@@ -846,17 +1086,7 @@ int Psip::message_connect(unsigned int epoint_id, int message_id, union paramete
 		}
 	}
 
-	ia.s_addr = htonl(p_s_rtp_ip_local);
-
-	SPRINT(sdp_str,
-		"v=0\n"
-		"o=LCR-Sofia-SIP 0 0 IN IP4 %s\n"
-		"s=SIP Call\n"
-		"c=IN IP4 %s\n"
-		"t=0 0\n"
-		"m=audio %d RTP/AVP %d\n"
-		"a=rtpmap:%d %s/8000\n"
-		, inet_ntoa(ia), inet_ntoa(ia), p_s_rtp_port_local, payload_type, payload_type, media_type2name(media_type));
+	sdp_str = generate_sdp(p_s_rtp_ip_local, p_s_rtp_port_local, 1, &payload_type, &media_type);
 	PDEBUG(DEBUG_SIP, "Using SDP response: %s\n", sdp_str);
 
 	/* NOTE:
@@ -869,10 +1099,14 @@ int Psip::message_connect(unsigned int epoint_id, int message_id, union paramete
 		NUTAG_MEDIA_ENABLE(0),
 		SIPTAG_CONTENT_TYPE_STR("application/sdp"),
 		SIPTAG_PAYLOAD_STR(sdp_str), TAG_END());
+
 	new_state(PORT_STATE_CONNECT);
-	sip_trace_header(this, "RESPOND", DIRECTION_OUT);
+	sip_trace_header(this, inst->interface_name, "RESPOND", DIRECTION_OUT);
 	add_trace("respond", "value", "200 OK");
 	add_trace("reason", NULL, "call connected");
+	struct in_addr ia;
+	memset(&ia, 0, sizeof(ia));
+	ia.s_addr = htonl(get_local_ip(p_s_rtp_ip_local));
 	add_trace("rtp", "ip", "%s", inet_ntoa(ia));
 	add_trace("rtp", "port", "%d,%d", p_s_rtp_port_local, p_s_rtp_port_local + 1);
 	add_trace("rtp", "payload", "%s:%d", media_type2name(media_type), payload_type);
@@ -883,6 +1117,7 @@ int Psip::message_connect(unsigned int epoint_id, int message_id, union paramete
 
 int Psip::message_release(unsigned int epoint_id, int message_id, union parameter *param)
 {
+	struct sip_inst *inst = (struct sip_inst *) p_s_sip_inst;
 	struct lcr_msg *message;
 	char cause_str[128] = "";
 	int cause = param->disconnectinfo.cause;
@@ -899,7 +1134,7 @@ int Psip::message_release(unsigned int epoint_id, int message_id, union paramete
 	case PORT_STATE_OUT_PROCEEDING:
 	case PORT_STATE_OUT_ALERTING:
 		PDEBUG(DEBUG_SIP, "RELEASE/DISCONNECT will cancel\n");
-		sip_trace_header(this, "CANCEL", DIRECTION_OUT);
+		sip_trace_header(this, inst->interface_name, "CANCEL", DIRECTION_OUT);
 		if (cause_str[0])
 			add_trace("cause", "value", "%d", cause);
 		end_trace();
@@ -910,7 +1145,7 @@ int Psip::message_release(unsigned int epoint_id, int message_id, union paramete
 	case PORT_STATE_IN_ALERTING:
 		PDEBUG(DEBUG_SIP, "RELEASE/DISCONNECT will respond\n");
 		status = cause2status(cause, location, &status_text);
-		sip_trace_header(this, "RESPOND", DIRECTION_OUT);
+		sip_trace_header(this, inst->interface_name, "RESPOND", DIRECTION_OUT);
 		if (cause_str[0])
 			add_trace("cause", "value", "%d", cause);
 		add_trace("respond", "value", "%d %s", status, status_text);
@@ -922,7 +1157,7 @@ int Psip::message_release(unsigned int epoint_id, int message_id, union paramete
 		break;
 	default:
 		PDEBUG(DEBUG_SIP, "RELEASE/DISCONNECT will perform nua_bye\n");
-		sip_trace_header(this, "BYE", DIRECTION_OUT);
+		sip_trace_header(this, inst->interface_name, "BYE", DIRECTION_OUT);
 		if (cause_str[0])
 			add_trace("cause", "value", "%d", cause);
 		end_trace();
@@ -948,28 +1183,44 @@ int Psip::message_release(unsigned int epoint_id, int message_id, union paramete
 int Psip::message_setup(unsigned int epoint_id, int message_id, union parameter *param)
 {
 	struct sip_inst *inst = (struct sip_inst *) p_s_sip_inst;
-	char from[128];
-	char to[128];
+	char from[128] = "";
+	char asserted_id[128] = "", asserted_msg[256] = "";
+	char to[128] = "";
+	char contact[128] = "";
 	const char *local = inst->local_peer;
 	char local_ip[16];
 	const char *remote = inst->remote_peer;
-	char sdp_str[512], pt_str[32];
-	struct in_addr ia;
+	const char *sdp_str = NULL;
 	struct epoint_list *epointlist;
 	sip_cseq_t *cseq = NULL;
 	struct lcr_msg *message;
 	int lcr_media = { (options.law=='a') ? MEDIA_TYPE_ALAW : MEDIA_TYPE_ULAW };
-	unsigned char lcr_payload = { (options.law=='a') ? PAYLOAD_TYPE_ALAW : PAYLOAD_TYPE_ULAW };
+	unsigned char lcr_payload = { (options.law=='a') ? (unsigned char )PAYLOAD_TYPE_ALAW : (unsigned char )PAYLOAD_TYPE_ULAW };
 	int *media_types;
 	unsigned char *payload_types;
 	int payloads = 0;
 	int i;
 
+	if (!remote[0]) {
+		sip_trace_header(this, inst->interface_name, "INVITE", DIRECTION_OUT);
+		add_trace("failed", "reason", "No remote peer set or no peer has registered to us.");
+		end_trace();
+		message = message_create(p_serial, epoint_id, PORT_TO_EPOINT, MESSAGE_RELEASE);
+		message->param.disconnectinfo.cause = 27;
+		message->param.disconnectinfo.location = LOCATION_PRIVATE_LOCAL;
+		message_put(message);
+		new_state(PORT_STATE_RELEASE);
+		trigger_work(&p_s_delete);
+		return 0;
+	}
+	
 	PDEBUG(DEBUG_SIP, "Doing Setup (inst %p)\n", inst);
 
 	memcpy(&p_dialinginfo, &param->setup.dialinginfo, sizeof(p_dialinginfo));
 	memcpy(&p_callerinfo, &param->setup.callerinfo, sizeof(p_callerinfo));
-	memcpy(&p_redirinfo, &param->setup.redirinfo, sizeof(p_redirinfo));
+//	memcpy(&p_redirinfo, &param->setup.redirinfo, sizeof(p_redirinfo));
+	do_screen(1, p_callerinfo.id, sizeof(p_callerinfo.id), &p_callerinfo.ntype, &p_callerinfo.present, inst->interface_name);
+//	do_screen(1, p_redirinfo.id, sizeof(p_redirinfo.id), &p_redirinfo.ntype, &p_redirinfo.present, inst->interface_name);
 
 	if (param->setup.rtpinfo.port) {
 		PDEBUG(DEBUG_SIP, "RTP info given by remote, forward that\n");
@@ -1000,6 +1251,18 @@ int Psip::message_setup(unsigned int epoint_id, int message_id, union parameter 
 			trigger_work(&p_s_delete);
 			return 0;
 		}
+		if (!p_s_rtp_ip_local) {
+			char *p;
+
+			/* extract IP from local peer */
+			SCPY(local_ip, local);
+			p = strchr(local_ip, ':');
+			if (p)
+				*p = '\0';
+			PDEBUG(DEBUG_SIP, "RTP local IP not known, so we use our local SIP ip %s\n", local_ip);
+			inet_pton(AF_INET, local_ip, &p_s_rtp_ip_local);
+			p_s_rtp_ip_local = ntohl(p_s_rtp_ip_local);
+		}
 	}
 
 	p_s_handle = nua_handle(inst->nua, NULL, TAG_END());
@@ -1014,49 +1277,36 @@ int Psip::message_setup(unsigned int epoint_id, int message_id, union parameter 
 		trigger_work(&p_s_delete);
 		return 0;
 	}
-	/* apply handle */
-	sip_trace_header(this, "NEW handle", DIRECTION_IN);
-	add_trace("handle", "new", "0x%x", p_s_handle);
-	end_trace();
+	/* apply handle to trace */
+//	sip_trace_header(this, inst->interface_name, "NEW handle", DIRECTION_IN);
+//	add_trace("handle", "new", "0x%x", p_s_handle);
+//	end_trace();
 
-	if (!p_s_rtp_ip_local) {
-		char *p;
-
-		/* extract IP from local peer */
-		SCPY(local_ip, local);
-		p = strchr(local_ip, ':');
-		if (p)
-			*p = '\0';
-		PDEBUG(DEBUG_SIP, "RTP local IP not known, so we use our local SIP ip %s\n", local_ip);
-		inet_pton(AF_INET, local_ip, &p_s_rtp_ip_local);
-		p_s_rtp_ip_local = ntohl(p_s_rtp_ip_local);
-	}
-	ia.s_addr = htonl(p_s_rtp_ip_local);
-	SPRINT(sdp_str,
-		"v=0\n"
-		"o=LCR-Sofia-SIP 0 0 IN IP4 %s\n"
-		"s=SIP Call\n"
-		"c=IN IP4 %s\n"
-		"t=0 0\n"
-		"m=audio %d RTP/AVP"
-		, inet_ntoa(ia), inet_ntoa(ia), p_s_rtp_port_local);
-	for (i = 0; i < payloads; i++) {
-		SPRINT(pt_str, " %d", payload_types[i]);
-		SCAT(sdp_str, pt_str);
-	}
-	SCAT(sdp_str, "\n");
-	for (i = 0; i < payloads; i++) {
-		SPRINT(pt_str, "a=rtpmap:%d %s/8000\n", payload_types[i], media_type2name(media_types[i]));
-		SCAT(sdp_str, pt_str);
-	}
+	sdp_str = generate_sdp(p_s_rtp_ip_local, p_s_rtp_port_local, payloads, payload_types, media_types);
 	PDEBUG(DEBUG_SIP, "Using SDP for invite: %s\n", sdp_str);
 
-	SPRINT(from, "sip:%s@%s", param->setup.callerinfo.id, local);
-	SPRINT(to, "sip:%s@%s", param->setup.dialinginfo.id, remote);
+	SPRINT(from, "sip:%s@%s", p_callerinfo.id, remote);
+	SPRINT(to, "sip:%s@%s", p_dialinginfo.id, remote);
+	if (inst->asserted_id[0]) {
+		SPRINT(asserted_id, "sip:%s@%s", inst->asserted_id, remote);
+		SPRINT(asserted_msg, "P-Asserted-Identity: <%s>", asserted_id);
+	}
+	if (inst->public_ip[0]) {
+		char *p;
+		SPRINT(contact, "sip:%s@%s", p_callerinfo.id, inst->public_ip);
+		p = strchr(inst->local_peer, ':');
+		if (p)
+			SCAT(contact, p);
+	}
 
-	sip_trace_header(this, "INVITE", DIRECTION_OUT);
+	sip_trace_header(this, inst->interface_name, "INVITE", DIRECTION_OUT);
 	add_trace("from", "uri", "%s", from);
 	add_trace("to", "uri", "%s", to);
+	if (asserted_id[0])
+		add_trace("assert-id", "uri", "%s", asserted_id);
+	struct in_addr ia;
+	memset(&ia, 0, sizeof(ia));
+	ia.s_addr = htonl(get_local_ip(p_s_rtp_ip_local));
 	add_trace("rtp", "ip", "%s", inet_ntoa(ia));
 	add_trace("rtp", "port", "%d,%d", p_s_rtp_port_local, p_s_rtp_port_local + 1);
 	for (i = 0; i < payloads; i++)
@@ -1068,11 +1318,15 @@ int Psip::message_setup(unsigned int epoint_id, int message_id, union parameter 
 	nua_invite(p_s_handle,
 		TAG_IF(from[0], SIPTAG_FROM_STR(from)),
 		TAG_IF(to[0], SIPTAG_TO_STR(to)),
+		TAG_IF(asserted_msg[0], SIPTAG_HEADER_STR(asserted_msg)),
+		TAG_IF(contact[0], SIPTAG_CONTACT_STR(contact)),
 		TAG_IF(cseq, SIPTAG_CSEQ(cseq)),
 		NUTAG_MEDIA_ENABLE(0),
 		SIPTAG_CONTENT_TYPE_STR("application/sdp"),
 		SIPTAG_PAYLOAD_STR(sdp_str), TAG_END());
 	new_state(PORT_STATE_OUT_SETUP);
+
+	p_s_invite_direction = DIRECTION_OUT;
 
 #if 0
 	PDEBUG(DEBUG_SIP, "do overlap\n");
@@ -1101,18 +1355,19 @@ int Psip::message_setup(unsigned int epoint_id, int message_id, union parameter 
 	
 int Psip::message_notify(unsigned int epoint_id, int message_id, union parameter *param)
 {
-//	char sdp_str[256];
+//	char 
 //	struct in_addr ia;
 
 	switch (param->notifyinfo.notify) {
 	case INFO_NOTIFY_REMOTE_HOLD:
 #if 0
+		sdp_str = generate_sdp(0, 0, 0, NULL, NULL);
 		SPRINT(sdp_str,
-			"v=0\n"
-			"o=LCR-Sofia-SIP 0 0 IN IP4 0.0.0.0\n"
-			"s=SIP Call\n"
-			"c=IN IP4 0.0.0.0\n"
-			"t=0 0\n"
+			"v=0\r\n"
+			"o=LCR-Sofia-SIP 0 0 IN IP4 0.0.0.0\r\n"
+			"s=SIP Call\r\n"
+			"c=IN IP4 0.0.0.0\r\n"
+			"t=0 0\r\n"
 			);
 		PDEBUG(DEBUG_SIP, "Using SDP for hold: %s\n", sdp_str);
 		nua_info(p_s_handle,
@@ -1126,16 +1381,7 @@ int Psip::message_notify(unsigned int epoint_id, int message_id, union parameter
 		break;
 	case INFO_NOTIFY_REMOTE_RETRIEVAL:
 #if 0
-		ia.s_addr = htonl(p_s_rtp_ip_local);
-		SPRINT(sdp_str,
-			"v=0\n"
-			"o=LCR-Sofia-SIP 0 0 IN IP4 %s\n"
-			"s=SIP Call\n"
-			"c=IN IP4 %s\n"
-			"t=0 0\n"
-			"m=audio %d RTP/AVP %d\n"
-			"a=rtpmap:%d %s/8000\n"
-			, inet_ntoa(ia), inet_ntoa(ia), p_s_rtp_port_local, p_s_rtp_payload_type, p_s_rtp_payload_type, media_type2name(p_s_rtp_media_type));
+		sdp_str = generate_sdp(p_s_rtp_ip_local, p_s_rtp_port_local, 1, &payload_type, &media_type);
 		PDEBUG(DEBUG_SIP, "Using SDP for rertieve: %s\n", sdp_str);
 		nua_info(p_s_handle,
 //			TAG_IF(from[0], SIPTAG_FROM_STR(from)),
@@ -1192,6 +1438,8 @@ int Psip::message_information(unsigned int epoint_id, int message_id, union para
 
 int Psip::message_epoint(unsigned int epoint_id, int message_id, union parameter *param)
 {
+	struct sip_inst *inst = (struct sip_inst *) p_s_sip_inst;
+
 	if (Port::message_epoint(epoint_id, message_id, param))
 		return 1;
 
@@ -1201,7 +1449,7 @@ int Psip::message_epoint(unsigned int epoint_id, int message_id, union parameter
 		 && p_state != PORT_STATE_IN_PROCEEDING)
 			return 0;
 		nua_respond(p_s_handle, SIP_180_RINGING, TAG_END());
-		sip_trace_header(this, "RESPOND", DIRECTION_OUT);
+		sip_trace_header(this, inst->interface_name, "RESPOND", DIRECTION_OUT);
 		add_trace("respond", "value", "180 Ringing");
 		end_trace();
 		new_state(PORT_STATE_IN_ALERTING);
@@ -1239,7 +1487,7 @@ int Psip::message_epoint(unsigned int epoint_id, int message_id, union parameter
 		return(1);
 
 		default:
-		PDEBUG(DEBUG_SIP, "PORT(%s) SP port with (caller id %s) received an unsupported message: %d\n", p_name, p_callerinfo.id, message_id);
+		PDEBUG(DEBUG_SIP, "PORT(%s) SIP port with (caller id %s) received an unsupported message: %d\n", p_name, p_callerinfo.id, message_id);
 	}
 
 	return 0;
@@ -1335,7 +1583,231 @@ int Psip::parse_sdp(sip_t const *sip, unsigned int *ip, unsigned short *port, ui
 	return 0;
 }
 
-void Psip::i_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tagss[])
+const char *Psip::generate_sdp(unsigned int rtp_ip_local, unsigned short rtp_port_local, int payloads, unsigned char *payload_types, int *media_types)
+{
+	struct in_addr ia;
+	static char sdp_str[256], sub_str[128];
+	int i;
+
+	memset(&ia, 0, sizeof(ia));
+	ia.s_addr = htonl(get_local_ip(p_s_rtp_ip_local));
+	SPRINT(sdp_str,
+		"v=0\r\n"
+		"o=LCR-Sofia-SIP 0 0 IN IP4 %s\r\n"
+		"s=SIP Call\r\n"
+		"c=IN IP4 %s\r\n"
+		"t=0 0\r\n", inet_ntoa(ia), inet_ntoa(ia));
+	if (payloads) {
+		SPRINT(sub_str, "m=audio %d RTP/AVP", p_s_rtp_port_local);
+		SCAT(sdp_str, sub_str);
+		for (i = 0; i < payloads; i++) {
+			SPRINT(sub_str, " %d", payload_types[i]);
+			SCAT(sdp_str, sub_str);
+		}
+		SCAT(sdp_str, "\r\n");
+		for (i = 0; i < payloads; i++) {
+			SPRINT(sub_str, "a=rtpmap:%d %s/8000\r\n", payload_types[i], media_type2name(media_types[i]));
+			SCAT(sdp_str, sub_str);
+		}
+	}
+
+	return sdp_str;
+}
+
+static int challenge(struct sip_inst *inst, class Psip *psip, int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
+{
+	sip_www_authenticate_t const *authenticate = NULL;
+	char const *realm = NULL;
+	char const *scheme = NULL;
+	int i;
+	char *cur;
+	char authentication[256] = "";
+	PDEBUG(DEBUG_SIP, "challenge order received\n");
+
+	if (!inst->auth_user[0]) {
+		PDEBUG(DEBUG_SIP, "No credentials available\n");
+		sip_trace_header(psip, inst->interface_name, "AUTHENTICATE", DIRECTION_OUT);
+		add_trace("error", NULL, "There are no credentials given for interface");
+		end_trace();
+		return -1;
+	}
+
+	if (sip->sip_www_authenticate) {
+		authenticate = sip->sip_www_authenticate;
+	} else if (sip->sip_proxy_authenticate) {
+		authenticate = sip->sip_proxy_authenticate;
+	} else {
+		PDEBUG(DEBUG_SIP, "No authentication header found\n");
+		sip_trace_header(psip, inst->interface_name, "AUTHENTICATE", DIRECTION_OUT);
+		add_trace("error", NULL, "Authentication method unknwon");
+		end_trace();
+		return -1;
+	}
+
+	scheme = (char const *) authenticate->au_scheme;
+	if (authenticate->au_params) {
+		for (i = 0; (cur = (char *) authenticate->au_params[i]); i++) {
+			if ((realm = strstr(cur, "realm="))) {
+				realm += 6;
+				break;
+			}
+		}
+	}
+
+	if (!scheme || !realm) {
+		PDEBUG(DEBUG_SIP, "No scheme or no realm in authentication header found\n");
+		sip_trace_header(psip, inst->interface_name, "AUTHENTICATE", DIRECTION_OUT);
+		add_trace("error", NULL, "Authentication header has no realm or scheme");
+		end_trace();
+		return -1;
+	}
+
+	SPRINT(authentication, "%s:%s:%s:%s", scheme, realm, inst->auth_user, inst->auth_password);
+	PDEBUG(DEBUG_SIP, "auth: '%s'\n", authentication);
+
+	sip_trace_header(psip, inst->interface_name, "AUTHENTICATE", DIRECTION_OUT);
+	add_trace("scheme", NULL, "%s", scheme);
+	add_trace("realm", NULL, "%s", realm);
+	add_trace("user", NULL, "%s", inst->auth_user);
+	add_trace("pass", NULL, "%s", inst->auth_password);
+	end_trace();
+
+	nua_authenticate(nh, /*SIPTAG_EXPIRES_STR("3600"),*/ NUTAG_AUTH(authentication), TAG_END());
+
+	return 0;
+}
+
+static void i_options(struct sip_inst *inst, int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
+{
+	#define NUTAG_WITH_THIS_MSG(msg) nutag_with, tag_ptr_v(msg)
+	nua_saved_event_t saved[1];
+	nua_save_event(nua, saved);
+	nua_event_data_t const *data = nua_event_data(saved);
+
+	sip_trace_header(NULL, inst->interface_name, "OPTIONS", DIRECTION_IN);
+	end_trace();
+
+	sip_trace_header(NULL, inst->interface_name, "RESPOND", DIRECTION_OUT);
+	add_trace("respond", "value", "200 OK");
+	end_trace();
+
+	nua_respond(nh, SIP_200_OK, NUTAG_WITH_THIS_MSG(data->e_msg), TAG_END());
+	nua_handle_destroy(nh);
+	inst->register_handle = NULL;
+}
+
+static void i_register(struct sip_inst *inst, int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
+{
+	#define NUTAG_WITH_THIS_MSG(msg) nutag_with, tag_ptr_v(msg)
+	nua_saved_event_t saved[1];
+	sip_contact_t const *contact = NULL;
+	contact = sip->sip_contact;
+	nua_save_event(nua, saved);
+	nua_event_data_t const *data = nua_event_data(saved);
+	sip_authorization_t const *authorization;
+	char uri[256] = "";
+	const char *auth_text = NULL;
+	char auth_str[256] = "";
+
+	if (contact->m_url->url_host)
+		SCPY(uri, contact->m_url->url_host);
+	if (contact->m_url->url_port && contact->m_url->url_port[0]) {
+		SCAT(uri, ":");
+		SCAT(uri, contact->m_url->url_port);
+	}
+
+	if (!inst->allow_register) {
+		sip_trace_header(NULL, inst->interface_name, "REGISTER", DIRECTION_IN);
+		add_trace("error", NULL, "forbidden, because we don't accept registration");
+		end_trace();
+		nua_respond(nh, SIP_403_FORBIDDEN, NUTAG_WITH_THIS_MSG(data->e_msg), TAG_END());
+		nua_handle_destroy(nh);
+		inst->register_handle = NULL;
+		return;
+	}
+
+	sip_trace_header(NULL, inst->interface_name, "REGISTER", DIRECTION_IN);
+	add_trace("contact", "uri", "%s", uri);
+	end_trace();
+
+	sip_trace_header(NULL, inst->interface_name, "Authorization", DIRECTION_IN);
+	if (inst->auth_realm[0]) {
+		authorization = sip->sip_authorization;
+		status = check_authorization(authorization, "REGISTER", inst->auth_user, inst->auth_password, inst->auth_realm, inst->auth_nonce, &auth_text);
+		if (status == 401) {
+			if (!inst->auth_nonce[0])
+				generate_nonce(inst->auth_nonce);
+			SPRINT(auth_str, "Digest realm=\"%s\", nonce=\"%s\", algorithm=MD5, qop=\"auth\"", inst->auth_realm, inst->auth_nonce);
+		}
+	} else {
+		status = 200;
+		auth_text = "Authentication not required";
+	}
+	add_trace("result", NULL, "%s", auth_text);
+	end_trace();
+
+	if (status == 200) {
+		SCPY(inst->remote_peer, uri);
+	}
+
+	sip_trace_header(NULL, inst->interface_name, "RESPOND", DIRECTION_OUT);
+	add_trace("respond", "value", "%d", status);
+	add_trace("reason", NULL, "peer registers");
+	end_trace();
+
+	nua_respond(nh, status, auth_text, SIPTAG_CONTACT(sip->sip_contact), NUTAG_WITH_THIS_MSG(data->e_msg), TAG_IF(auth_str[0], SIPTAG_WWW_AUTHENTICATE_STR(auth_str)), TAG_END());
+	nua_handle_destroy(nh);
+	inst->register_handle = NULL;
+}
+
+static void r_register(struct sip_inst *inst, int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
+{
+	int rc;
+
+	sip_trace_header(NULL, inst->interface_name, "STATUS", DIRECTION_IN);
+	add_trace("value", NULL, "%d", status);
+	add_trace("phrase", NULL, "%s", phrase);
+	end_trace();
+
+	switch (status) {
+	case 200:
+		status_200:
+		/* if not registered, become registered and start register interval timer */
+		if (inst->register_state != REGISTER_STATE_REGISTERED) {
+			if (inst->register_interval)
+				schedule_timer(&inst->register_retry_timer, inst->register_interval, 0);
+			inst->register_state = REGISTER_STATE_REGISTERED;
+		}
+		/* start option timer */
+		if (inst->options_interval)
+			PDEBUG(DEBUG_SIP, "register ok, scheduling option timer with %d seconds\n", inst->options_interval);
+			schedule_timer(&inst->register_option_timer, inst->options_interval, 0);
+		break;
+	case 401:
+	case 407:
+		PDEBUG(DEBUG_SIP, "Register challenge received\n");
+		rc = challenge(inst, NULL, status, phrase, nua, magic, nh, hmagic, sip, tags);
+		if (rc < 0)
+			goto status_400;
+		break;
+	default:
+		if (status >= 200 && status <= 299)
+			goto status_200;
+		if (status < 400)
+			break;
+		status_400:
+		PDEBUG(DEBUG_SIP, "Register failed, starting register timer\n");
+		inst->register_state = REGISTER_STATE_FAILED;
+		nua_handle_destroy(nh);
+		inst->register_handle = NULL;
+		/* stop option timer */
+		unsched_timer(&inst->register_option_timer);
+		/* if failed, start register interval timer with REGISTER_RETRY_TIMER */
+		schedule_timer(&inst->register_retry_timer, REGISTER_RETRY_TIMER);
+	}
+}
+
+void Psip::i_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
 {
 	struct sip_inst *inst = (struct sip_inst *) p_s_sip_inst;
 	const char *from = "", *to = "", *name = "";
@@ -1344,10 +1816,15 @@ void Psip::i_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 	class Endpoint *epoint;
 	struct lcr_msg *message;
 	struct interface *interface;
+	const char *sdp_str = NULL;
 	int media_types[32];
 	uint8_t payload_types[32];
 	int payloads = 0;
+	unsigned char payload_type;
 	int media_type;
+	sip_authorization_t const *authorization;
+	const char *auth_text = NULL;
+	char auth_str[256] = "";
 
 	interface = getinterfacebyname(inst->interface_name);
 	if (!interface) {
@@ -1373,7 +1850,40 @@ void Psip::i_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 	}
 	PDEBUG(DEBUG_SIP, "invite received (%s->%s)\n", from, to);
 
-	sip_trace_header(this, "Payload received", DIRECTION_NONE);
+	sip_trace_header(this, inst->interface_name, "Authorization", DIRECTION_IN);
+	if (inst->auth_realm[0] || p_state != PORT_STATE_IDLE) {
+		/* only authenticate remote, if we have a realm set and we don't have re-invite */
+		authorization = sip->sip_proxy_authorization;
+		status = check_authorization(authorization, "INVITE", inst->auth_user, inst->auth_password, inst->auth_realm, inst->auth_nonce, &auth_text);
+		if (status == 407) {
+			if (!inst->auth_nonce[0])
+				generate_nonce(inst->auth_nonce);
+			SPRINT(auth_str, "Digest realm=\"%s\", nonce=\"%s\", algorithm=MD5, qop=\"auth\"", inst->auth_realm, inst->auth_nonce);
+		}
+	} else {
+		status = 200;
+		auth_text = "Authentication not required";
+	}
+	add_trace("result", NULL, "%s", auth_text);
+	end_trace();
+
+	if (status == 200) {
+	} else {
+		sip_trace_header(this, inst->interface_name, "INVITE", DIRECTION_IN);
+		end_trace();
+
+		sip_trace_header(this, inst->interface_name, "RESPOND", DIRECTION_OUT);
+		add_trace("respond", "value", "%d", status);
+		add_trace("reason", NULL, "peer invited");
+		end_trace();
+
+		nua_respond(nh, status, auth_text, SIPTAG_CONTACT(sip->sip_contact), TAG_IF(auth_str[0], SIPTAG_PROXY_AUTHENTICATE_STR(auth_str)), TAG_END());
+		new_state(PORT_STATE_RELEASE);
+		trigger_work(&p_s_delete);
+		return;
+	}
+
+	sip_trace_header(this, inst->interface_name, "Payload received", DIRECTION_NONE);
 	ret = parse_sdp(sip, &p_s_rtp_ip_remote, &p_s_rtp_port_remote, payload_types, media_types, &payloads, sizeof(payload_types));
 	if (!ret) {
 		/* if no RTP bridge, we must support LAW codec, otherwise we forward what we have */
@@ -1399,15 +1909,49 @@ void Psip::i_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 			nua_respond(nh, SIP_415_UNSUPPORTED_MEDIA, TAG_END());
 		nua_handle_destroy(nh);
 		p_s_handle = NULL;
-		sip_trace_header(this, "RESPOND", DIRECTION_OUT);
+		sip_trace_header(this, inst->interface_name, "RESPOND", DIRECTION_OUT);
 		if (ret == 400)
 			add_trace("respond", "value", "415 Unsupported Media");
 		else
 			add_trace("respond", "value", "400 Bad Request");
 		add_trace("reason", NULL, "offered codec does not match");
 		end_trace();
+		if (p_state != PORT_STATE_IDLE) {
+			message = message_create(p_serial, ACTIVE_EPOINT(p_epointlist), PORT_TO_EPOINT, MESSAGE_RELEASE);
+			message->param.disconnectinfo.cause = 41;
+			message->param.disconnectinfo.location = LOCATION_PRIVATE_LOCAL;
+			message_put(message);
+		}
 		new_state(PORT_STATE_RELEASE);
 		trigger_work(&p_s_delete);
+		return;
+	}
+
+	/* handle re-invite */
+	if (p_state != PORT_STATE_IDLE) {
+		sip_trace_header(this, inst->interface_name, "RE-INVITE", DIRECTION_IN);
+		end_trace();
+		if (p_s_rtp_bridge) {
+			PDEBUG(DEBUG_SIP, "RE-INVITE not implemented for RTP forwarding\n");
+			nua_respond(nh, SIP_501_NOT_IMPLEMENTED, TAG_END());
+			sip_trace_header(this, inst->interface_name, "RESPOND", DIRECTION_OUT);
+			add_trace("respond", "value", "501 NOT IMPLEMENTED");
+			add_trace("reason", NULL, "RE-INVITE not implemented for RTP forwarding");
+			end_trace();
+		} else {
+			PDEBUG(DEBUG_SIP, "RTP info given by remote, forward that\n");
+			media_type = (options.law=='a') ? MEDIA_TYPE_ALAW : MEDIA_TYPE_ULAW;
+			payload_type = (options.law=='a') ? PAYLOAD_TYPE_ALAW : PAYLOAD_TYPE_ULAW;
+			if (rtp_connect() < 0) {
+				goto rtp_failed;
+			}
+			sdp_str = generate_sdp(p_s_rtp_ip_local, p_s_rtp_port_local, 1, &payload_type, &media_type);
+			PDEBUG(DEBUG_SIP, "Using SDP response: %s\n", sdp_str);
+			nua_respond(p_s_handle, SIP_200_OK,
+				NUTAG_MEDIA_ENABLE(0),
+				SIPTAG_CONTENT_TYPE_STR("application/sdp"),
+				SIPTAG_PAYLOAD_STR(sdp_str), TAG_END());
+		}
 		return;
 	}
 
@@ -1416,7 +1960,7 @@ void Psip::i_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 		nua_respond(nh, SIP_500_INTERNAL_SERVER_ERROR, TAG_END());
 		nua_handle_destroy(nh);
 		p_s_handle = NULL;
-		sip_trace_header(this, "RESPOND", DIRECTION_OUT);
+		sip_trace_header(this, inst->interface_name, "RESPOND", DIRECTION_OUT);
 		add_trace("respond", "value", "500 Internal Server Error");
 		add_trace("reason", NULL, "failed to open RTP/RTCP sockts");
 		end_trace();
@@ -1426,12 +1970,13 @@ void Psip::i_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 	}
 
 	/* apply handle */
-	sip_trace_header(this, "NEW handle", DIRECTION_IN);
-	add_trace("handle", "new", "0x%x", nh);
+//	sip_trace_header(this, inst->interface_name, "NEW handle", DIRECTION_IN);
+//	add_trace("handle", "new", "0x%x", nh);
+//	end_trace();
+//
 	p_s_handle = nh;
-	end_trace();
 
-	sip_trace_header(this, "INVITE", DIRECTION_IN);
+	sip_trace_header(this, inst->interface_name, "INVITE", DIRECTION_IN);
 	add_trace("rtp", "port", "%d", p_s_rtp_port_remote);
 	/* caller information */
 	if (!from[0]) {
@@ -1482,7 +2027,7 @@ void Psip::i_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 #ifdef NUTAG_AUTO100
 	/* send trying (proceeding) */
 	nua_respond(nh, SIP_100_TRYING, TAG_END());
-	sip_trace_header(this, "RESPOND", DIRECTION_OUT);
+	sip_trace_header(this, inst->interface_name, "RESPOND", DIRECTION_OUT);
 	add_trace("respond", "value", "100 Trying");
 	end_trace();
 #endif
@@ -1516,26 +2061,29 @@ void Psip::i_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 	}
 	message_put(message);
 
+	/* start option timer */
+	if (inst->options_interval) {
+		PDEBUG(DEBUG_SIP, "Invite received, scheduling option timer with %d seconds\n", inst->options_interval);
+		schedule_timer(&p_s_invite_option_timer, inst->options_interval, 0);
+	}
+
+	p_s_invite_direction = DIRECTION_IN;
+
 	/* send progress, if tones are available and if we don't bridge */
 	if (!p_s_rtp_bridge && interface->is_tones == IS_YES) {
-		char sdp_str[256];
-		struct in_addr ia;
-		unsigned char payload_type;
-
 		PDEBUG(DEBUG_SIP, "Connecting audio, since we have tones available\n");
 		media_type = (options.law=='a') ? MEDIA_TYPE_ALAW : MEDIA_TYPE_ULAW;
 		payload_type = (options.law=='a') ? PAYLOAD_TYPE_ALAW : PAYLOAD_TYPE_ULAW;
 		/* open local RTP peer (if not bridging) */
 		if (rtp_connect() < 0) {
+rtp_failed:
 			nua_respond(nh, SIP_500_INTERNAL_SERVER_ERROR, TAG_END());
 			nua_handle_destroy(nh);
 			p_s_handle = NULL;
-			sip_trace_header(this, "RESPOND", DIRECTION_OUT);
+			sip_trace_header(this, inst->interface_name, "RESPOND", DIRECTION_OUT);
 			add_trace("respond", "value", "500 Internal Server Error");
 			add_trace("reason", NULL, "failed to connect RTP/RTCP sockts");
 			end_trace();
-			new_state(PORT_STATE_RELEASE);
-			trigger_work(&p_s_delete);
 			message = message_create(p_serial, ACTIVE_EPOINT(p_epointlist), PORT_TO_EPOINT, MESSAGE_RELEASE);
 			message->param.disconnectinfo.cause = 41;
 			message->param.disconnectinfo.location = LOCATION_PRIVATE_LOCAL;
@@ -1545,26 +2093,19 @@ void Psip::i_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 			return;
 		}
 
-		ia.s_addr = htonl(p_s_rtp_ip_local);
-
-		SPRINT(sdp_str,
-			"v=0\n"
-			"o=LCR-Sofia-SIP 0 0 IN IP4 %s\n"
-			"s=SIP Call\n"
-			"c=IN IP4 %s\n"
-			"t=0 0\n"
-			"m=audio %d RTP/AVP %d\n"
-			"a=rtpmap:%d %s/8000\n"
-			, inet_ntoa(ia), inet_ntoa(ia), p_s_rtp_port_local, payload_type, payload_type, media_type2name(media_type));
+		sdp_str = generate_sdp(p_s_rtp_ip_local, p_s_rtp_port_local, 1, &payload_type, &media_type);
 		PDEBUG(DEBUG_SIP, "Using SDP response: %s\n", sdp_str);
 
 		nua_respond(p_s_handle, SIP_183_SESSION_PROGRESS,
 			NUTAG_MEDIA_ENABLE(0),
 			SIPTAG_CONTENT_TYPE_STR("application/sdp"),
 			SIPTAG_PAYLOAD_STR(sdp_str), TAG_END());
-		sip_trace_header(this, "RESPOND", DIRECTION_OUT);
+		sip_trace_header(this, inst->interface_name, "RESPOND", DIRECTION_OUT);
 		add_trace("respond", "value", "183 SESSION PROGRESS");
 		add_trace("reason", NULL, "audio available");
+		struct in_addr ia;
+		memset(&ia, 0, sizeof(ia));
+		ia.s_addr = htonl(get_local_ip(p_s_rtp_ip_local));
 		add_trace("rtp", "ip", "%s", inet_ntoa(ia));
 		add_trace("rtp", "port", "%d,%d", p_s_rtp_port_local, p_s_rtp_port_local + 1);
 		add_trace("rtp", "payload", "%s:%d", media_type2name(media_type), payload_type);
@@ -1572,14 +2113,27 @@ void Psip::i_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 	}
 }
 
-void Psip::i_bye(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tagss[])
+void Psip::i_options(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
 {
+	struct sip_inst *inst = (struct sip_inst *) p_s_sip_inst;
+
+	PDEBUG(DEBUG_SIP, "options received\n");
+
+	sip_trace_header(this, inst->interface_name, "OPTIONS", DIRECTION_IN);
+	end_trace();
+
+	nua_respond(nh, SIP_200_OK, TAG_END());
+}
+
+void Psip::i_bye(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
+{
+	struct sip_inst *inst = (struct sip_inst *) p_s_sip_inst;
 	struct lcr_msg *message;
 	int cause = 0;
 
 	PDEBUG(DEBUG_SIP, "bye received\n");
 
-	sip_trace_header(this, "BYE", DIRECTION_IN);
+	sip_trace_header(this, inst->interface_name, "BYE", DIRECTION_IN);
 	if (sip->sip_reason && sip->sip_reason->re_protocol && !strcasecmp(sip->sip_reason->re_protocol, "Q.850") && sip->sip_reason->re_cause) {
 		cause = atoi(sip->sip_reason->re_cause);
 		add_trace("cause", "value", "%d", cause);
@@ -1588,7 +2142,7 @@ void Psip::i_bye(int status, char const *phrase, nua_t *nua, nua_magic_t *magic,
 
 // let stack do bye automaticall, since it will not accept our response for some reason
 //	nua_respond(nh, SIP_200_OK, TAG_END());
-	sip_trace_header(this, "RESPOND", DIRECTION_OUT);
+	sip_trace_header(this, inst->interface_name, "RESPOND", DIRECTION_OUT);
 	add_trace("respond", "value", "200 OK");
 	end_trace();
 //	nua_handle_destroy(nh);
@@ -1609,13 +2163,14 @@ void Psip::i_bye(int status, char const *phrase, nua_t *nua, nua_magic_t *magic,
 	trigger_work(&p_s_delete);
 }
 
-void Psip::i_cancel(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tagss[])
+void Psip::i_cancel(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
 {
+	struct sip_inst *inst = (struct sip_inst *) p_s_sip_inst;
 	struct lcr_msg *message;
 
 	PDEBUG(DEBUG_SIP, "cancel received\n");
 
-	sip_trace_header(this, "CANCEL", DIRECTION_IN);
+	sip_trace_header(this, inst->interface_name, "CANCEL", DIRECTION_IN);
 	end_trace();
 
 	nua_handle_destroy(nh);
@@ -1636,7 +2191,7 @@ void Psip::i_cancel(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 	trigger_work(&p_s_delete);
 }
 
-void Psip::r_bye(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tagss[])
+void Psip::r_bye(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
 {
 	PDEBUG(DEBUG_SIP, "bye response received\n");
 
@@ -1648,7 +2203,7 @@ void Psip::r_bye(int status, char const *phrase, nua_t *nua, nua_magic_t *magic,
 	trigger_work(&p_s_delete);
 }
 
-void Psip::r_cancel(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tagss[])
+void Psip::r_cancel(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
 {
 	PDEBUG(DEBUG_SIP, "cancel response received\n");
 
@@ -1660,8 +2215,9 @@ void Psip::r_cancel(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 	trigger_work(&p_s_delete);
 }
 
-void Psip::r_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tagss[])
+void Psip::r_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
 {
+	struct sip_inst *inst = (struct sip_inst *) p_s_sip_inst;
 	struct lcr_msg *message;
 	int cause = 0, location = 0;
 	int media_types[32];
@@ -1670,15 +2226,21 @@ void Psip::r_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 
 	PDEBUG(DEBUG_SIP, "response to invite received (status = %d)\n", status);
 
-	sip_trace_header(this, "RESPOND", DIRECTION_OUT);
+	sip_trace_header(this, inst->interface_name, "RESPOND", DIRECTION_OUT);
 	add_trace("respond", "value", "%d", status);
 	end_trace();
+
+	if (status == 401 || status == 407) {
+		PDEBUG(DEBUG_SIP, "Invite challenge received\n");
+		challenge(inst, this, status, phrase, nua, magic, nh, hmagic, sip, tags);
+		return;
+	}
 
 	/* connect audio */
 	if (status == 183 || (status >= 200 && status <= 299)) {
 		int ret;
 
-		sip_trace_header(this, "Payload received", DIRECTION_NONE);
+		sip_trace_header(this, inst->interface_name, "Payload received", DIRECTION_NONE);
 		ret = parse_sdp(sip, &p_s_rtp_ip_remote, &p_s_rtp_port_remote, payload_types, media_types, &payloads, sizeof(payload_types));
 		if (!ret) {
 			if (payloads != 1)
@@ -1693,7 +2255,7 @@ void Psip::r_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 		end_trace();
 		if (ret) {
 			nua_cancel(nh, TAG_END());
-			sip_trace_header(this, "CANCEL", DIRECTION_OUT);
+			sip_trace_header(this, inst->interface_name, "CANCEL", DIRECTION_OUT);
 			add_trace("reason", NULL, "accepted codec does not match");
 			end_trace();
 			cause = 88;
@@ -1704,7 +2266,7 @@ void Psip::r_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 		/* connect to remote RTP (if not bridging) */
 		if (!p_s_rtp_bridge && rtp_connect() < 0) {
 			nua_cancel(nh, TAG_END());
-			sip_trace_header(this, "CANCEL", DIRECTION_OUT);
+			sip_trace_header(this, inst->interface_name, "CANCEL", DIRECTION_OUT);
 			add_trace("reason", NULL, "failed to open RTP/RTCP sockts");
 			end_trace();
 			cause = 31;
@@ -1713,7 +2275,12 @@ void Psip::r_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 		}
 	}
 
-	/* process 1xx */
+	/* start option timer */
+	if (inst->options_interval) {
+		PDEBUG(DEBUG_SIP, "Invite response, scheduling option timer with %d seconds\n", inst->options_interval);
+		schedule_timer(&p_s_invite_option_timer, inst->options_interval, 0);
+	}
+
 	switch (status) {
 	case 100:
 #if 0
@@ -1743,16 +2310,8 @@ void Psip::r_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 		}
 		message_put(message);
 		return;
-	default:
-		if (status < 100 || status > 199)
-			break;
-		PDEBUG(DEBUG_SIP, "skipping 1xx message\n");
-
-		return;
-	}
-
-	/* process 2xx */
-	if (status >= 200 && status <= 299) {
+	case 200:
+		status_200:
 		PDEBUG(DEBUG_SIP, "do connect\n");
 		nua_ack(nh, TAG_END());
 		new_state(PORT_STATE_CONNECT);
@@ -1766,7 +2325,16 @@ void Psip::r_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 		}
 		message_put(message);
 		return;
+	default:
+		if (status >= 200 && status <= 299)
+			goto status_200;
+		if (status < 100 || status > 199)
+			break;
+		PDEBUG(DEBUG_SIP, "skipping 1xx message\n");
+
+		return;
 	}
+
 	cause = status2cause(status);
 	location = LOCATION_BEYOND;
 
@@ -1790,47 +2358,139 @@ release_with_cause:
 	trigger_work(&p_s_delete);
 }
 
+void Psip::r_options(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
+{
+	struct sip_inst *inst = (struct sip_inst *) p_s_sip_inst;
+	int cause = 0, location = 0;
+	struct lcr_msg *message;
+
+	PDEBUG(DEBUG_SIP, "options result %d received\n", status);
+
+	if (status >= 200 && status <= 299) {
+		PDEBUG(DEBUG_SIP, "options ok, scheduling option timer with %d seconds\n", inst->options_interval);
+		/* restart option timer */
+		schedule_timer(&p_s_invite_option_timer, inst->options_interval, 0);
+		return;
+	}
+
+	nua_handle_destroy(nh);
+	p_s_handle = NULL;
+
+	rtp_close();
+
+	cause = status2cause(status);
+	location = LOCATION_BEYOND;
+
+	while(p_epointlist) {
+		/* send setup message to endpoit */
+		message = message_create(p_serial, p_epointlist->epoint_id, PORT_TO_EPOINT, MESSAGE_RELEASE);
+		message->param.disconnectinfo.cause = cause;
+		message->param.disconnectinfo.location = location;
+		message_put(message);
+		/* remove epoint */
+		free_epointlist(p_epointlist);
+	}
+	new_state(PORT_STATE_RELEASE);
+	trigger_work(&p_s_delete);
+}
+
+void Psip::i_state(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
+{
+	struct sip_inst *inst = (struct sip_inst *) p_s_sip_inst;
+
+	PDEBUG(DEBUG_SIP, "state change received\n");
+	sip_trace_header(this, inst->interface_name, "STATUS", DIRECTION_OUT);
+	add_trace("value", NULL, "%d", status);
+	add_trace("phrase", NULL, "%s", phrase);
+	end_trace();
+}
+
 static void sip_callback(nua_event_t event, int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
 {
 	struct sip_inst *inst = (struct sip_inst *) magic;
 	class Port *port;
 	class Psip *psip = NULL;
 
-	PDEBUG(DEBUG_SIP, "Event %d from stack received (handle=%p)\n", event, nh);
+	PDEBUG(DEBUG_SIP, "Event %d from SIP stack received (handle=%p)\n", event, nh);
 	if (!nh)
 		return;
 
-	/* create or find port instance */
-	if (event == nua_i_invite)
-	{
-		char name[64];
-		struct interface *interface = interface_first;
-
-		/* create call instance */
-		SPRINT(name, "%s-%d-in", inst->interface_name, 0);
-		while (interface) {
-			if (!strcmp(interface->name, inst->interface_name))
+	/* hunt for existing handles */
+	port = port_first;
+	while(port) {
+		if ((port->p_type & PORT_CLASS_mISDN_MASK) == PORT_CLASS_SIP) {
+			psip = (class Psip *)port;
+			if (psip->p_s_handle == nh) {
+				PDEBUG(DEBUG_SIP, "Event found for port %s\n", psip->p_name);
 				break;
-			interface = interface->next;
+			}
 		}
-		if (!interface) {
-			PERROR("Cannot find interface %s.\n", inst->interface_name);
+		port = port->next;
+	}
+	if (!port)
+		psip = NULL;
+
+	/* new handle */
+	switch (event) {
+	case nua_i_options:
+		if (!inst->register_handle) {
+			PDEBUG(DEBUG_SIP, "New options instance\n");
+			inst->register_handle = nh;
+		}
+		break;
+	case nua_i_register:
+		if (!inst->register_handle) {
+			PDEBUG(DEBUG_SIP, "New register instance\n");
+			inst->register_handle = nh;
+		}
+		break;
+	case nua_i_invite:
+		if (!psip) {
+			char name[64];
+			struct interface *interface = interface_first;
+
+			PDEBUG(DEBUG_SIP, "New psip instance\n");
+
+			/* create call instance */
+			SPRINT(name, "%s-%d-in", inst->interface_name, 0);
+			while (interface) {
+				if (!strcmp(interface->name, inst->interface_name))
+					break;
+				interface = interface->next;
+			}
+			if (!interface)
+				FATAL("Cannot find interface %s.\n", inst->interface_name);
+			if (!(psip = new Psip(PORT_TYPE_SIP_IN, name, NULL, interface)))
+				FATAL("Cannot create Port instance.\n");
+		}
+		break;
+	default:
+		if (!psip && !inst->register_handle) {
+			PDEBUG(DEBUG_SIP, "Destroying unknown instance\n");
+			nua_handle_destroy(nh);
 			return;
 		}
-		if (!(psip = new Psip(PORT_TYPE_SIP_IN, name, NULL, interface)))
-			FATAL("Cannot create Port instance.\n");
-	} else {
-		port = port_first;
-		while(port) {
-			if ((port->p_type & PORT_CLASS_mISDN_MASK) == PORT_CLASS_SIP) {
-				psip = (class Psip *)port;
-				if (psip->p_s_handle == nh) {
-					break;
-				}
-			}
-			port = port->next;
-		}
 	}
+
+	/* handle register process */
+	if (inst->register_handle == nh) {
+		switch (event) {
+		case nua_i_options:
+			i_options(inst, status, phrase, nua, magic, nh, hmagic, sip, tags);
+			break;
+		case nua_i_register:
+			i_register(inst, status, phrase, nua, magic, nh, hmagic, sip, tags);
+			break;
+		case nua_r_register:
+			r_register(inst, status, phrase, nua, magic, nh, hmagic, sip, tags);
+			break;
+		default:
+			PDEBUG(DEBUG_SIP, "Event %d not handled\n", event);
+		}
+		return;
+	}
+
+	/* handle port process */
 	if (!psip) {
 		PERROR("no SIP Port found for handel %p\n", nh);
 		nua_respond(nh, SIP_500_INTERNAL_SERVER_ERROR, TAG_END());
@@ -1842,14 +2502,14 @@ static void sip_callback(nua_event_t event, int status, char const *phrase, nua_
 	case nua_r_set_params:
 		PDEBUG(DEBUG_SIP, "setparam response\n");
 		break;
+	case nua_r_options:
+		psip->r_options(status, phrase, nua, magic, nh, hmagic, sip, tags);
+		break;
 	case nua_i_error:
 		PDEBUG(DEBUG_SIP, "error received\n");
 		break;
 	case nua_i_state:
-		PDEBUG(DEBUG_SIP, "state change received\n");
-		break;
-	case nua_i_register:
-		PDEBUG(DEBUG_SIP, "register received\n");
+		psip->i_state(status, phrase, nua, magic, nh, hmagic, sip, tags);
 		break;
 	case nua_i_invite:
 		psip->i_invite(status, phrase, nua, magic, nh, hmagic, sip, tags);
@@ -1859,6 +2519,9 @@ static void sip_callback(nua_event_t event, int status, char const *phrase, nua_
 		break;
 	case nua_i_active:
 		PDEBUG(DEBUG_SIP, "active received\n");
+		break;
+	case nua_i_options:
+		psip->i_options(status, phrase, nua, magic, nh, hmagic, sip, tags);
 		break;
 	case nua_i_bye:
 		psip->i_bye(status, phrase, nua, magic, nh, hmagic, sip, tags);
@@ -1883,14 +2546,50 @@ static void sip_callback(nua_event_t event, int status, char const *phrase, nua_
 	}
 }
 
+static void stun_bind_cb(stun_discovery_magic_t *magic, stun_handle_t *sh, stun_discovery_t *sd, stun_action_t action, stun_state_t event)
+{
+	struct sip_inst *inst = (struct sip_inst *) magic;
+	su_sockaddr_t sa;
+	socklen_t addrlen;
+
+	PDEBUG(DEBUG_SIP, "Event %d from STUN stack received\n", event);
+
+	switch (event) {
+	case stun_discovery_done:
+		addrlen = sizeof(sa);
+		memset(&sa, 0, addrlen);
+		if (stun_discovery_get_address(sd, &sa, &addrlen) < 0) {
+			PDEBUG(DEBUG_SIP, "stun_discovery_get_address failed\n");
+			goto failed;
+		}
+		su_inet_ntop(sa.su_family, SU_ADDR(&sa), inst->public_ip, sizeof(inst->public_ip));
+		inst->stun_state = STUN_STATE_RESOLVED;
+		/* start timer for next stun request with inst->stun_interval */
+		schedule_timer(&inst->stun_retry_timer, inst->stun_interval, 0);
+		sip_trace_header(NULL, inst->interface_name, "STUN resolved", DIRECTION_OUT);
+		add_trace("ip", "addr", "%s", inst->public_ip);
+		end_trace();
+		break;
+	default:
+failed:
+		PDEBUG(DEBUG_SIP, "STUN failed, starting timer\n");
+		inst->stun_state = STUN_STATE_FAILED;
+		/* start timer for next stun request (after failing) with STUN_RETRY_TIMER */
+		schedule_timer(&inst->stun_retry_timer, STUN_RETRY_TIMER);
+		sip_trace_header(NULL, inst->interface_name, "STUN failed", DIRECTION_OUT);
+		end_trace();
+	}
+}
+
 /* received shutdown due to termination of RTP */
 void Psip::rtp_shutdown(void)
 {
+	struct sip_inst *inst = (struct sip_inst *) p_s_sip_inst;
 	struct lcr_msg *message;
 
 	PDEBUG(DEBUG_SIP, "RTP stream terminated\n");
 
-	sip_trace_header(this, "RTP terminated", DIRECTION_IN);
+	sip_trace_header(this, inst->interface_name, "RTP terminated", DIRECTION_IN);
 	end_trace();
 
 	nua_handle_destroy(p_s_handle);
@@ -1909,15 +2608,98 @@ void Psip::rtp_shutdown(void)
 	trigger_work(&p_s_delete);
 }
 
+static int invite_option_timer(struct lcr_timer *timer, void *instance, int index)
+{
+	class Psip *psip = (class Psip *)instance;
+	struct sip_inst *inst = (struct sip_inst *) psip->p_s_sip_inst;
+
+	sip_trace_header(psip, inst->interface_name, "OPTIONS", psip->p_s_invite_direction);
+	end_trace();
+
+	nua_options(psip->p_s_handle,
+		TAG_END());
+
+	return 0;
+}
+
+static int stun_retry_timer(struct lcr_timer *timer, void *instance, int index)
+{
+	struct sip_inst *inst = (struct sip_inst *)instance;
+
+	PDEBUG(DEBUG_SIP, "timeout, restart stun lookup\n");
+	inst->stun_state = STUN_STATE_UNRESOLVED;
+
+	return 0;
+}
+
+static int register_retry_timer(struct lcr_timer *timer, void *instance, int index)
+{
+	struct sip_inst *inst = (struct sip_inst *)instance;
+
+	PDEBUG(DEBUG_SIP, "timeout, restart register\n");
+	/* if we have a handle, destroy it and becom unregistered, so registration is
+	 * triggered next */
+	if (inst->register_handle) {
+		/* stop option timer */
+		unsched_timer(&inst->register_option_timer);
+		nua_handle_destroy(inst->register_handle);
+		inst->register_handle = NULL;
+	}
+	inst->register_state = REGISTER_STATE_UNREGISTERED;
+
+	return 0;
+}
+
+static int register_option_timer(struct lcr_timer *timer, void *instance, int index)
+{
+	struct sip_inst *inst = (struct sip_inst *)instance;
+	sip_trace_header(NULL, inst->interface_name, "OPTIONS", DIRECTION_OUT);
+	end_trace();
+
+	nua_options(inst->register_handle,
+		TAG_END());
+
+	return 0;
+}
+
 int sip_init_inst(struct interface *interface)
 {
 	struct sip_inst *inst = (struct sip_inst *) MALLOC(sizeof(*inst));
-	char local[64];
+	char local[256];
 
 	interface->sip_inst = inst;
 	SCPY(inst->interface_name, interface->name);
 	SCPY(inst->local_peer, interface->sip_local_peer);
 	SCPY(inst->remote_peer, interface->sip_remote_peer);
+	if (!inst->remote_peer[0])
+		inst->allow_register = 1;
+	SCPY(inst->asserted_id, interface->sip_asserted_id);
+	if (interface->sip_register) {
+		inst->register_state = REGISTER_STATE_UNREGISTERED;
+		SCPY(inst->register_user, interface->sip_register_user);
+		SCPY(inst->register_host, interface->sip_register_host);
+	}
+	SCPY(inst->auth_user, interface->sip_auth_user);
+	SCPY(inst->auth_password, interface->sip_auth_password);
+	SCPY(inst->auth_realm, interface->sip_auth_realm);
+	inst->register_interval = interface->sip_register_interval;
+	inst->options_interval = interface->sip_options_interval;
+
+	inst->rtp_port_from = interface->rtp_port_from;
+	inst->rtp_port_to = interface->rtp_port_to;
+	if (!inst->rtp_port_from || !inst->rtp_port_to) {
+		inst->rtp_port_from = RTP_PORT_BASE;
+		inst->rtp_port_to = RTP_PORT_MAX;
+	}
+	inst->next_rtp_port = inst->rtp_port_from;
+
+	/* create timers */
+	memset(&inst->stun_retry_timer, 0, sizeof(inst->stun_retry_timer));
+        add_timer(&inst->stun_retry_timer, stun_retry_timer, inst, 0);
+	memset(&inst->register_retry_timer, 0, sizeof(inst->register_retry_timer));
+        add_timer(&inst->register_retry_timer, register_retry_timer, inst, 0);
+	memset(&inst->register_option_timer, 0, sizeof(inst->register_option_timer));
+        add_timer(&inst->register_option_timer, register_option_timer, inst, 0);
 
 	/* init root object */
 	inst->root = su_root_create(inst);
@@ -1937,7 +2719,8 @@ int sip_init_inst(struct interface *interface)
 		return -EINVAL;
 	}
 	nua_set_params(inst->nua,
-		SIPTAG_ALLOW_STR("INVITE,ACK,BYE,CANCEL,OPTIONS,NOTIFY,INFO"),
+		SIPTAG_ALLOW_STR("REGISTER,INVITE,ACK,BYE,CANCEL,OPTIONS,NOTIFY,INFO"),
+		NUTAG_APPL_METHOD("REGISTER"),
 		NUTAG_APPL_METHOD("INVITE"),
 		NUTAG_APPL_METHOD("ACK"),
 //		NUTAG_APPL_METHOD("BYE"), /* we must reply to BYE */
@@ -1953,6 +2736,27 @@ int sip_init_inst(struct interface *interface)
 		NUTAG_AUTOANSWER(0),
 		TAG_NULL());
 
+	SCPY(inst->public_ip, interface->sip_public_ip);
+	if (interface->sip_stun_server[0]) {
+		SCPY(inst->stun_server, interface->sip_stun_server);
+		inst->stun_interval = interface->sip_stun_interval;
+		inst->stun_handle = stun_handle_init(inst->root,
+			STUNTAG_SERVER(inst->stun_server),
+			TAG_NULL());
+		if (!inst->stun_handle) {
+			PERROR("Failed to create STUN handle\n");
+			sip_exit_inst(interface);
+			return -EINVAL;
+		}
+		inst->stun_socket = su_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+		if (inst->stun_socket < 0) {
+			PERROR("Failed to create STUN socket\n");
+			sip_exit_inst(interface);
+			return -EINVAL;
+		}
+		inst->stun_state = STUN_STATE_UNRESOLVED;
+	}
+
 	PDEBUG(DEBUG_SIP, "SIP interface created (inst=%p)\n", inst);
 
 	any_sip_interface = 1;
@@ -1966,11 +2770,19 @@ void sip_exit_inst(struct interface *interface)
 
 	if (!inst)
 		return;
+	del_timer(&inst->stun_retry_timer);
+	del_timer(&inst->register_retry_timer);
+	del_timer(&inst->register_option_timer);
+	if (inst->stun_socket)
+		su_close(inst->stun_socket);
+	if (inst->stun_handle)
+		stun_handle_destroy(inst->stun_handle);
+	if (inst->register_handle)
+		nua_handle_destroy(inst->register_handle);
 	if (inst->root)
 		su_root_destroy(inst->root);
-	if (inst->nua) {
+	if (inst->nua)
 		nua_destroy(inst->nua);
-	}
 	FREE(inst, sizeof(*inst));
 	interface->sip_inst = NULL;
 
@@ -1989,7 +2801,6 @@ void sip_exit_inst(struct interface *interface)
 
 extern su_log_t su_log_default[];
 extern su_log_t nua_log[];
-//extern su_log_t soa_log[];
 
 int sip_init(void)
 {
@@ -2021,6 +2832,82 @@ void sip_exit(void)
 	PDEBUG(DEBUG_SIP, "SIP globals de-initialized\n");
 }
 
+static void sip_handle_stun(struct sip_inst *inst)
+{
+	int rc;
+
+	switch (inst->stun_state) {
+	case STUN_STATE_UNRESOLVED:
+		PDEBUG(DEBUG_SIP, "Trying to to get local IP from stun server\n");
+		rc = stun_bind(inst->stun_handle, stun_bind_cb, (stun_discovery_magic_t *)inst,
+			STUNTAG_SOCKET(inst->stun_socket),
+			STUNTAG_REGISTER_EVENTS(1),
+			TAG_NULL());
+		if (rc < 0) {
+			PERROR("Failed to call stun_bind()\n");
+			inst->stun_state = STUN_STATE_FAILED;
+			break;
+		}
+		inst->stun_state = STUN_STATE_RESOLVING;
+		sip_trace_header(NULL, inst->interface_name, "STUN resolving", DIRECTION_OUT);
+		add_trace("server", "addr", "%s", inst->stun_server);
+		end_trace();
+		break;
+	}
+}
+
+static void sip_handle_register(struct sip_inst *inst)
+{
+	char from[128] = "";
+	char to[128] = "";
+	char contact[128] = "";
+
+	switch (inst->register_state) {
+	case REGISTER_STATE_UNREGISTERED:
+		/* wait for resoved stun */
+		if (inst->stun_handle && inst->stun_state != STUN_STATE_RESOLVED)
+			return;
+
+		PDEBUG(DEBUG_SIP, "Registering to peer\n");
+		inst->register_handle = nua_handle(inst->nua, NULL, TAG_END());
+		if (!inst->register_handle) {
+			PERROR("Failed to create handle\n");
+			inst->register_state = REGISTER_STATE_FAILED;
+			break;
+		}
+		/* apply handle to trace */
+//		sip_trace_header(NULL, inst->interface_name, "NEW handle", DIRECTION_NONE);
+//		add_trace("handle", "new", "0x%x", inst->register_handle);
+//		end_trace();
+
+		SPRINT(from, "sip:%s@%s", inst->register_user, inst->register_host);
+		SPRINT(to, "sip:%s@%s", inst->register_user, inst->register_host);
+		if (inst->public_ip[0]) {
+			char *p;
+			SPRINT(contact, "sip:%s@%s", inst->register_user, inst->public_ip);
+			p = strchr(inst->local_peer, ':');
+			if (p)
+				SCAT(contact, p);
+		}
+
+		sip_trace_header(NULL, inst->interface_name, "REGISTER", DIRECTION_OUT);
+		add_trace("from", "uri", "%s", from);
+		add_trace("to", "uri", "%s", to);
+		end_trace();
+
+		nua_register(inst->register_handle,
+			TAG_IF(from[0], SIPTAG_FROM_STR(from)),
+			TAG_IF(to[0], SIPTAG_TO_STR(to)),
+			TAG_IF(contact[0], SIPTAG_CONTACT_STR(contact)),
+			TAG_END());
+
+		inst->register_state = REGISTER_STATE_REGISTERING;
+
+		break;
+	}
+	
+}
+
 void sip_handle(void)
 {
 	struct interface *interface = interface_first;
@@ -2030,6 +2917,8 @@ void sip_handle(void)
 		if (interface->sip_inst) {
 			inst = (struct sip_inst *) interface->sip_inst;
 			su_root_step(inst->root, 0);
+			sip_handle_stun(inst);
+			sip_handle_register(inst);
 		}
 		interface = interface->next;
 	}
@@ -2060,7 +2949,7 @@ void Psip::set_tone(const char *dir, const char *tone)
 void Psip::update_load(void)
 {
 	/* don't trigger load event if event already active */
-	if (p_s_loadtimer.active)
+	if (p_s_load_timer.active)
 		return;
 
 	/* don't start timer if ... */
@@ -2068,7 +2957,7 @@ void Psip::update_load(void)
 		return;
 
 	p_s_next_tv_sec = 0;
-	schedule_timer(&p_s_loadtimer, 0, 0); /* no delay the first time */
+	schedule_timer(&p_s_load_timer, 0, 0); /* no delay the first time */
 }
 
 static int load_timer(struct lcr_timer *timer, void *instance, int index)
@@ -2103,7 +2992,7 @@ void Psip::load_tx(void)
 			p_s_next_tv_usec -= 1000000;
 			p_s_next_tv_sec++;
 		}
-		schedule_timer(&p_s_loadtimer, 0, SEND_SIP_LEN * 125);
+		schedule_timer(&p_s_load_timer, 0, SEND_SIP_LEN * 125);
 	} else {
 		diff = 1000000 * (current_time.tv_sec - p_s_next_tv_sec)
 			+ (current_time.tv_usec - p_s_next_tv_usec);
@@ -2124,7 +3013,7 @@ void Psip::load_tx(void)
 				p_s_next_tv_sec++;
 			}
 		}
-		schedule_timer(&p_s_loadtimer, 0, SEND_SIP_LEN * 125 - diff);
+		schedule_timer(&p_s_load_timer, 0, SEND_SIP_LEN * 125 - diff);
 	}
 
 	/* copy tones */

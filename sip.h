@@ -19,6 +19,7 @@ class Psip : public Port
 	public:
 	Psip(int type, char *portname, struct port_settings *settings, struct interface *interface);
 	~Psip();
+	unsigned int get_local_ip(unsigned int ip);
 	int message_epoint(unsigned int epoint_id, int message, union parameter *param);
 	int message_connect(unsigned int epoint_id, int message, union parameter *param);
 	int message_release(unsigned int epoint_id, int message, union parameter *param);
@@ -32,10 +33,15 @@ class Psip : public Port
 	void r_bye(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[]);
 	void r_cancel(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[]);
 	void r_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[]);
+	void i_options(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[]);
+	void r_options(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[]);
+	void i_state(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[]);
 	void *p_s_sip_inst;
 	struct lcr_work p_s_delete;
 	nua_handle_t *p_s_handle;
 	nua_magic_t *p_s_magic;
+	struct lcr_timer p_s_invite_option_timer; /* time to send OPTION to invite transaction */
+	int p_s_invite_direction; /* DIRECTION_* of invite */
 	int p_s_rtp_bridge; /* bridge RTP instead of having a local RTP peer */
 	unsigned short p_s_rtp_port_local;
 	unsigned short p_s_rtp_port_remote;
@@ -64,11 +70,12 @@ class Psip : public Port
 	unsigned char p_s_rxdata[160]; /* receive audio buffer */
 	int p_s_rxpos; /* position in audio buffer 0..159 */
 	int bridge_rx(unsigned char *data, int len);
+	const char *generate_sdp(unsigned int rtp_ip_local, unsigned short rtp_port_local, int payloads, unsigned char *payload_types, int *media_types);
 	int parse_sdp(sip_t const *sip, unsigned int *ip, unsigned short *port, uint8_t *payload_types, int *media_types, int *payloads, int max_payloads);
 	void rtp_shutdown(void);
 
 	/* audio */
-	struct lcr_timer p_s_loadtimer;		/* timer for audio transmission */
+	struct lcr_timer p_s_load_timer;	/* timer for audio transmission */
 	virtual void update_load(void);
 	void load_tx(void);
 	unsigned int p_s_next_tv_sec;		/* time stamp of next expected tx_load call, (to sync audio data) */

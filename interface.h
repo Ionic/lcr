@@ -126,9 +126,23 @@ struct interface {
 #endif
 #ifdef WITH_SIP
 	int			sip; /* interface is a SIP interface */
-	char			sip_local_peer[32];
-	char			sip_remote_peer[32];
+	char			sip_local_peer[128];
+	char			sip_remote_peer[128];
+	char			sip_asserted_id[128];
+	char			sip_auth_user[128];
+	char			sip_auth_password[128];
+	char			sip_auth_realm[128];
+	int			sip_register;
+	char			sip_register_user[128];
+	char			sip_register_host[128];
+	int			sip_register_interval; /* interval to register */
+	int			sip_options_interval; /* timer to keepalive invite/register transactions */
+	char			sip_public_ip[128];
+	char			sip_stun_server[128];
+	int			sip_stun_interval; /* timer to check own IP address */
 	void			*sip_inst; /* sip instance */
+	unsigned short		rtp_port_from;
+	unsigned short		rtp_port_to;
 #endif
 	int			rtp_bridge; /* bridge RTP directly (for calls comming from interface) */
 };
