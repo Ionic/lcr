@@ -1226,9 +1226,9 @@ void PmISDN::set_tone(const char *dir, const char *tone)
 
 	/* if no directory is given (by extension), we use interface.conf or options.conf */
 	if (!dir || !dir[0]) {
-		if (p_m_mISDNport->ifport->tones_dir[0])
-			dir = p_m_mISDNport->ifport->tones_dir;
-		else if (options.tones_dir[0])
+		if (p_tones_interface[0])
+			dir = p_tones_interface;
+		else
 			dir = options.tones_dir;
 	}
 

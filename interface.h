@@ -66,7 +66,6 @@ struct interface_port {
 //	int			tout_hold;
 //	int			tout_park;
 	int			dialmax; /* maximum number of digits to dial */
-	char			tones_dir[128];
 	int			nonotify; /* blocks outgoing notify messages  */
 	int			pots_flash; /* allow flash button / keypulse to hold active call */
 	int			pots_ring; /* after hangup let calls on hold ring the phone */
@@ -105,6 +104,7 @@ struct interface {
 	struct interface_screen *ifscreen_in; /* link to screening list */
 	struct interface_screen *ifscreen_out; /* link to screening list */
 	int			tx_gain, rx_gain; /* filter gain */
+	char			tones_dir[128];
 	char			pipeline[256]; /* filter pipeline */
 	unsigned char		bf_key[56]; /* filter blowfish */
 	int			bf_len; /* filter length of blowfish */

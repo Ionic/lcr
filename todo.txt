@@ -21,4 +21,21 @@ doku:
 - aufzeichnung der ansage mit 0 ohne beep beenden
 - gain, pipeline, crypt
 - polling
+- sip
+
+sip:
+
+- blockiert der prozess beim lookup? (also invite oder register bei dns-unerreichbarkeit)
+- feste ip statt stun
+- ankommende registrierung
+- earlyb testen (siehe interface.conf)
+- callerid als display-info
+
+routing:
+- ersetzten-operator
+- bei einem sending-complete muss ein timeout als abgelaufen behandelt werden
+
+lcradmin:
+- mncc status (socket-connection) anzeigen
+- sip status (register) anzeigen
 

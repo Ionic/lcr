@@ -880,18 +880,12 @@ static int inter_dialmax(struct interface *interface, char *filename, int line, 
 }
 static int inter_tones_dir(struct interface *interface, char *filename, int line, char *parameter, char *value)
 {
-	struct interface_port *ifport;
-
-	/* port in chain ? */
-	if (!interface->ifport) {
-		SPRINT(interface_error, "Error in %s (line %d): parameter '%s' expects previous 'port' definition.\n", filename, line, parameter);
+	if (!value || !value[0]) {
+		SPRINT(interface_error, "Error in %s (line %d): Missing tones directory.\n", filename, line);
 		return(-1);
 	}
-	/* goto end of chain */
-	ifport = interface->ifport;
-	while(ifport->next)
-		ifport = ifport->next;
-	SCPY(ifport->tones_dir, value);
+	SCPY(interface->tones_dir, value);
+
 	return(0);
 }
 static int inter_gsm(struct interface *interface, char *filename, int line, char *parameter, char *value)
@@ -1352,6 +1346,9 @@ struct interface_param interface_param[] = {
 	"Limits the number of digits in setup/information message."},
 
 	{"tones_dir", &inter_tones_dir, "<path>",
+	"Overrides the given tone_dir in options.conf.\n"
+	"To used kernel tones in mISDN_dsp.ko, say 'american', 'german', or 'oldgerman'."},
+	{"tones-dir", &inter_tones_dir, "<path>",
 	"Overrides the given tone_dir in options.conf.\n"
 	"To used kernel tones in mISDN_dsp.ko, say 'american', 'german', or 'oldgerman'."},
 

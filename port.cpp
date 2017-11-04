@@ -159,8 +159,10 @@ Port::Port(int type, const char *portname, struct port_settings *settings, struc
 		memset(&p_settings, 0, sizeof(p_settings));
 	}
 	SCPY(p_name, portname);
-	if (interface)
+	if (interface) {
 		SCPY(p_interface_name, interface->name);
+		SCPY(p_tones_interface, interface->tones_dir);
+	}
 	p_tone_dir[0] = '\0';
 	p_type = type;
 	p_serial = port_serial++;
@@ -323,8 +325,12 @@ void Port::set_tone(const char *dir, const char *name)
 	if (name == NULL)
 		name = "";
 
-	if (!dir || !dir[0])
-		dir = options.tones_dir; /* just in case we have no PmISDN instance */
+	if (!dir || !dir[0]) {
+		if (p_tones_interface[0])
+			dir = p_tones_interface;
+		else
+			dir = options.tones_dir; /* just in case we have no PmISDN instance */
+	}
 
 	/* no counter, no eof, normal speed */
 	p_tone_counter = 0;

@@ -207,6 +207,7 @@ class Port
 	char p_interface_name[64];
 	
 	/* tone */
+	char p_tones_interface[256];		/* directory of tones of interface */
 	char p_tone_dir[256];			/* name of current directory */
 	char p_tone_name[256];			/* name of current tone */
 	char p_tone_fh;				/* file descriptor of current tone or -1 if not open */
