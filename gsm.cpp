@@ -435,7 +435,6 @@ int Pgsm::bridge_rx(unsigned char *data, int len)
 int Pgsm::audio_send(unsigned char *data, int len)
 {
 	unsigned char frame[33];
-	int ret;
 
 	/* record data */
 	if (p_record)
@@ -506,6 +505,7 @@ int Pgsm::audio_send(unsigned char *data, int len)
 			}
 #ifdef WITH_GSMAMR
 			/* encode data (prefix a length byte) */
+			int ret;
 			ret = gsm_amr_encode(p_g_amr_encoder, p_g_rxdata, frame + 1, p_g_amr_cmr);
 			frame[0] = ret;
 			frame_send(frame, ret + 1, GSM_TCH_FRAME_AMR);
