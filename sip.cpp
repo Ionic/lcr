@@ -1851,7 +1851,7 @@ void Psip::i_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 	PDEBUG(DEBUG_SIP, "invite received (%s->%s)\n", from, to);
 
 	sip_trace_header(this, inst->interface_name, "Authorization", DIRECTION_IN);
-	if (inst->auth_realm[0] || p_state != PORT_STATE_IDLE) {
+	if (inst->auth_realm[0] && p_state == PORT_STATE_IDLE) {
 		/* only authenticate remote, if we have a realm set and we don't have re-invite */
 		authorization = sip->sip_proxy_authorization;
 		status = check_authorization(authorization, "INVITE", inst->auth_user, inst->auth_password, inst->auth_realm, inst->auth_nonce, &auth_text);
