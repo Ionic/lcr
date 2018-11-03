@@ -1554,9 +1554,10 @@ struct interface_param interface_param[] = {
 	{"sip", &inter_sip, "<local IP/host>[:port] [<remote IP/host>[port]]",
 	"Sets up SIP interface that represents one SIP endpoint.\n"
 	"If the remote IP/host is omitted, a client must register first to us."},
-	{"register", &inter_register, "<user> <host> [options-interval]",
+	{"register", &inter_register, "<user> <host> [register-interval]",
 	"Registers to given SIP registrar.\n"
-	"Optionally give SIP timer to send OPTIONS messages to keepalive REGISTER sessions."},
+	"Optionally give RE-REGISTER interval time in seconds.\n"
+	"The exire value is set 60 seconds ahead this interval, then."},
 	{"authenticate", &inter_authenticate, "<user> <password> [realm]",
 	"Defines SIP user and password for authentication.\n"
 	"If no remote IP was give, we are SIP gateway, so realm must be given also."},

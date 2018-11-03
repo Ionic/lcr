@@ -64,6 +64,7 @@ struct sip_inst {
 	struct lcr_timer 	register_retry_timer;
 	struct lcr_timer 	register_option_timer;
 	int			register_interval;
+	nua_handle_t		*options_handle;
 	int			options_interval;
 	char			auth_user[128];
 	char			auth_password[128];
@@ -1286,6 +1287,7 @@ int Psip::message_setup(unsigned int epoint_id, int message_id, union parameter 
 	PDEBUG(DEBUG_SIP, "Using SDP for invite: %s\n", sdp_str);
 
 	SPRINT(from, "sip:%s@%s", p_callerinfo.id, remote);
+//	SPRINT(from, "\"%s\" <sip:%s@%s>", /*p_callerinfo.id*/ "4946448519988", p_callerinfo.id, remote);
 	SPRINT(to, "sip:%s@%s", p_dialinginfo.id, remote);
 	if (inst->asserted_id[0]) {
 		SPRINT(asserted_id, "sip:%s@%s", inst->asserted_id, remote);
@@ -1693,7 +1695,7 @@ static void i_options(struct sip_inst *inst, int status, char const *phrase, nua
 
 	nua_respond(nh, SIP_200_OK, NUTAG_WITH_THIS_MSG(data->e_msg), TAG_END());
 	nua_handle_destroy(nh);
-	inst->register_handle = NULL;
+	inst->options_handle = NULL;
 }
 
 static void i_register(struct sip_inst *inst, int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
@@ -2433,15 +2435,26 @@ static void sip_callback(nua_event_t event, int status, char const *phrase, nua_
 	/* new handle */
 	switch (event) {
 	case nua_i_options:
-		if (!inst->register_handle) {
+		if (!psip && !inst->options_handle) {
 			PDEBUG(DEBUG_SIP, "New options instance\n");
-			inst->register_handle = nh;
+			inst->options_handle = nh;
+		}
+		if (!psip) {
+			i_options(inst, status, phrase, nua, magic, nh, hmagic, sip, tags);
+			return;
 		}
 		break;
 	case nua_i_register:
 		if (!inst->register_handle) {
 			PDEBUG(DEBUG_SIP, "New register instance\n");
 			inst->register_handle = nh;
+		}
+		i_register(inst, status, phrase, nua, magic, nh, hmagic, sip, tags);
+		break;
+	case nua_r_register:
+		if (!psip) {
+			r_register(inst, status, phrase, nua, magic, nh, hmagic, sip, tags);
+			return;
 		}
 		break;
 	case nua_i_invite:
@@ -2465,29 +2478,11 @@ static void sip_callback(nua_event_t event, int status, char const *phrase, nua_
 		}
 		break;
 	default:
-		if (!psip && !inst->register_handle) {
+		if (!psip && inst->register_handle != nh) {
 			PDEBUG(DEBUG_SIP, "Destroying unknown instance\n");
 			nua_handle_destroy(nh);
 			return;
 		}
-	}
-
-	/* handle register process */
-	if (inst->register_handle == nh) {
-		switch (event) {
-		case nua_i_options:
-			i_options(inst, status, phrase, nua, magic, nh, hmagic, sip, tags);
-			break;
-		case nua_i_register:
-			i_register(inst, status, phrase, nua, magic, nh, hmagic, sip, tags);
-			break;
-		case nua_r_register:
-			r_register(inst, status, phrase, nua, magic, nh, hmagic, sip, tags);
-			break;
-		default:
-			PDEBUG(DEBUG_SIP, "Event %d not handled\n", event);
-		}
-		return;
 	}
 
 	/* handle port process */
@@ -2779,6 +2774,8 @@ void sip_exit_inst(struct interface *interface)
 		stun_handle_destroy(inst->stun_handle);
 	if (inst->register_handle)
 		nua_handle_destroy(inst->register_handle);
+	if (inst->options_handle)
+		nua_handle_destroy(inst->options_handle);
 	if (inst->root)
 		su_root_destroy(inst->root);
 	if (inst->nua)
@@ -2861,6 +2858,7 @@ static void sip_handle_register(struct sip_inst *inst)
 	char from[128] = "";
 	char to[128] = "";
 	char contact[128] = "";
+	char expires[128] = "";
 
 	switch (inst->register_state) {
 	case REGISTER_STATE_UNREGISTERED:
@@ -2890,15 +2888,22 @@ static void sip_handle_register(struct sip_inst *inst)
 				SCAT(contact, p);
 		}
 
+		if (inst->register_interval) {
+			SPRINT(expires, "%d", inst->register_interval + 60);
+		}
+
 		sip_trace_header(NULL, inst->interface_name, "REGISTER", DIRECTION_OUT);
 		add_trace("from", "uri", "%s", from);
 		add_trace("to", "uri", "%s", to);
+		if (expires[0])
+			add_trace("expires", NULL, "%s", expires);
 		end_trace();
 
 		nua_register(inst->register_handle,
 			TAG_IF(from[0], SIPTAG_FROM_STR(from)),
 			TAG_IF(to[0], SIPTAG_TO_STR(to)),
 			TAG_IF(contact[0], SIPTAG_CONTACT_STR(contact)),
+			TAG_IF(expires[0], SIPTAG_EXPIRES_STR(expires)),
 			TAG_END());
 
 		inst->register_state = REGISTER_STATE_REGISTERING;
