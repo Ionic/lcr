@@ -2153,6 +2153,69 @@ void Psip::i_options(int status, char const *phrase, nua_t *nua, nua_magic_t *ma
 	nua_respond(nh, SIP_200_OK, TAG_END());
 }
 
+// code stolen from freeswitch....
+static char RFC2833_CHARS[] = "0123456789*#ABCDF";
+
+static char switch_rfc2833_to_char(int event)
+{
+        if (event > -1 && event < (int32_t) sizeof(RFC2833_CHARS)) {
+                return RFC2833_CHARS[event];
+        }
+        return '\0';
+}
+
+void Psip::i_info(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
+{
+	struct sip_inst *inst = (struct sip_inst *) p_s_sip_inst;
+	char digit = '\0';
+
+	PDEBUG(DEBUG_SIP, "options received\n");
+
+	// code stolen from freeswitch....
+
+	if (sip && sip->sip_content_type && sip->sip_content_type->c_type && sip->sip_content_type->c_subtype && sip->sip_payload && sip->sip_payload->pl_data) {
+		if (!strncasecmp(sip->sip_content_type->c_type, "application", 11) && !strcasecmp(sip->sip_content_type->c_subtype, "dtmf-relay")) {
+			const char *signal_ptr;
+			if ((signal_ptr = strstr(sip->sip_payload->pl_data, "Signal="))) {
+				int tmp;
+				/* move signal_ptr where we need it (right past Signal=) */
+				signal_ptr = signal_ptr + 7;
+
+				/* handle broken devices with spaces after the = (cough) VegaStream (cough) */
+				while (*signal_ptr && *signal_ptr == ' ')
+					signal_ptr++;
+
+				if (*signal_ptr
+					&& (*signal_ptr == '*' || *signal_ptr == '#' || *signal_ptr == 'A' || *signal_ptr == 'B' || *signal_ptr == 'C'
+						|| *signal_ptr == 'D')) {
+					digit = *signal_ptr;
+				} else {
+					tmp = atoi(signal_ptr);
+					digit = switch_rfc2833_to_char(tmp);
+				}
+			}
+
+		} else if (!strncasecmp(sip->sip_content_type->c_type, "application", 11) && !strcasecmp(sip->sip_content_type->c_subtype, "dtmf")) {
+			int tmp = atoi(sip->sip_payload->pl_data);
+			digit = switch_rfc2833_to_char(tmp);
+		}
+	}
+
+	sip_trace_header(this, inst->interface_name, "INFO", DIRECTION_IN);
+	if (digit) {
+		char digitstr[2] = { digit, '\0' };
+		struct lcr_msg *message;
+		add_trace("dtmf", "digit", digitstr);
+		message = message_create(p_serial, ACTIVE_EPOINT(p_epointlist), PORT_TO_EPOINT, MESSAGE_DTMF);
+		message->param.dtmf = digit;
+		PDEBUG(DEBUG_SIP, "Psip(%s) INFO WITH DTMF digit '%c'\n", p_name, message->param.dtmf);
+		message_put(message);
+	}
+	end_trace();
+
+	nua_respond(nh, SIP_200_OK, TAG_END());
+}
+
 void Psip::i_bye(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
 {
 	struct sip_inst *inst = (struct sip_inst *) p_s_sip_inst;
@@ -2559,6 +2622,9 @@ static void sip_callback(nua_event_t event, int status, char const *phrase, nua_
 		break;
 	case nua_i_options:
 		psip->i_options(status, phrase, nua, magic, nh, hmagic, sip, tags);
+		break;
+	case nua_i_info:
+		psip->i_info(status, phrase, nua, magic, nh, hmagic, sip, tags);
 		break;
 	case nua_i_bye:
 		psip->i_bye(status, phrase, nua, magic, nh, hmagic, sip, tags);
