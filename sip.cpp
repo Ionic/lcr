@@ -64,7 +64,6 @@ struct sip_inst {
 	struct lcr_timer 	register_retry_timer;
 	struct lcr_timer 	register_option_timer;
 	int			register_interval;
-	nua_handle_t		*options_handle;
 	int			options_interval;
 	char			auth_user[128];
 	char			auth_password[128];
@@ -1072,6 +1071,7 @@ int Psip::message_connect(unsigned int epoint_id, int message_id, union paramete
 		/* open local RTP peer (if not bridging) */
 		if (rtp_connect() < 0) {
 			nua_cancel(p_s_handle, TAG_END());
+			PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", p_s_handle);
 			nua_handle_destroy(p_s_handle);
 			p_s_handle = NULL;
 			sip_trace_header(this, inst->interface_name, "CANCEL", DIRECTION_OUT);
@@ -1152,6 +1152,7 @@ int Psip::message_release(unsigned int epoint_id, int message_id, union paramete
 		add_trace("respond", "value", "%d %s", status, status_text);
 		end_trace();
 		nua_respond(p_s_handle, status, status_text, TAG_IF(cause_str[0], SIPTAG_REASON_STR(cause_str)), TAG_END());
+		PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", p_s_handle);
 		nua_handle_destroy(p_s_handle);
 		p_s_handle = NULL;
 		trigger_work(&p_s_delete);
@@ -1694,8 +1695,6 @@ static void i_options(struct sip_inst *inst, int status, char const *phrase, nua
 	end_trace();
 
 	nua_respond(nh, SIP_200_OK, NUTAG_WITH_THIS_MSG(data->e_msg), TAG_END());
-	nua_handle_destroy(nh);
-	inst->options_handle = NULL;
 }
 
 static void i_register(struct sip_inst *inst, int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
@@ -1723,6 +1722,7 @@ static void i_register(struct sip_inst *inst, int status, char const *phrase, nu
 		add_trace("error", NULL, "forbidden, because we don't accept registration");
 		end_trace();
 		nua_respond(nh, SIP_403_FORBIDDEN, NUTAG_WITH_THIS_MSG(data->e_msg), TAG_END());
+		PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", nh);
 		nua_handle_destroy(nh);
 		inst->register_handle = NULL;
 		return;
@@ -1758,6 +1758,7 @@ static void i_register(struct sip_inst *inst, int status, char const *phrase, nu
 	end_trace();
 
 	nua_respond(nh, status, auth_text, SIPTAG_CONTACT(sip->sip_contact), NUTAG_WITH_THIS_MSG(data->e_msg), TAG_IF(auth_str[0], SIPTAG_WWW_AUTHENTICATE_STR(auth_str)), TAG_END());
+	PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", nh);
 	nua_handle_destroy(nh);
 	inst->register_handle = NULL;
 }
@@ -1781,9 +1782,10 @@ static void r_register(struct sip_inst *inst, int status, char const *phrase, nu
 			inst->register_state = REGISTER_STATE_REGISTERED;
 		}
 		/* start option timer */
-		if (inst->options_interval)
+		if (inst->options_interval) {
 			PDEBUG(DEBUG_SIP, "register ok, scheduling option timer with %d seconds\n", inst->options_interval);
 			schedule_timer(&inst->register_option_timer, inst->options_interval, 0);
+		}
 		break;
 	case 401:
 	case 407:
@@ -1800,6 +1802,7 @@ static void r_register(struct sip_inst *inst, int status, char const *phrase, nu
 		status_400:
 		PDEBUG(DEBUG_SIP, "Register failed, starting register timer\n");
 		inst->register_state = REGISTER_STATE_FAILED;
+		PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", nh);
 		nua_handle_destroy(nh);
 		inst->register_handle = NULL;
 		/* stop option timer */
@@ -1807,6 +1810,26 @@ static void r_register(struct sip_inst *inst, int status, char const *phrase, nu
 		/* if failed, start register interval timer with REGISTER_RETRY_TIMER */
 		schedule_timer(&inst->register_retry_timer, REGISTER_RETRY_TIMER);
 	}
+}
+
+static void r_options(struct sip_inst *inst, int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
+{
+	PDEBUG(DEBUG_SIP, "options result %d received\n", status);
+
+//	if (status >= 200 && status <= 299) {
+		PDEBUG(DEBUG_SIP, "options ok, scheduling option timer with %d seconds\n", inst->options_interval);
+		/* restart option timer */
+		schedule_timer(&inst->register_option_timer, inst->options_interval, 0);
+		return;
+///	}
+
+	PDEBUG(DEBUG_SIP, "Register options failed, starting register timer\n");
+	inst->register_state = REGISTER_STATE_FAILED;
+	PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", nh);
+	nua_handle_destroy(nh);
+	inst->register_handle = NULL;
+	/* if failed, start register interval timer with REGISTER_RETRY_TIMER */
+	schedule_timer(&inst->register_retry_timer, REGISTER_RETRY_TIMER);
 }
 
 void Psip::i_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *magic, nua_handle_t *nh, nua_hmagic_t *hmagic, sip_t const *sip, tagi_t tags[])
@@ -1909,6 +1932,7 @@ void Psip::i_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 			nua_respond(nh, SIP_400_BAD_REQUEST, TAG_END());
 		else
 			nua_respond(nh, SIP_415_UNSUPPORTED_MEDIA, TAG_END());
+		PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", nh);
 		nua_handle_destroy(nh);
 		p_s_handle = NULL;
 		sip_trace_header(this, inst->interface_name, "RESPOND", DIRECTION_OUT);
@@ -1960,6 +1984,7 @@ void Psip::i_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 	/* open local RTP peer (if not bridging) */
 	if (!p_s_rtp_bridge && rtp_open() < 0) {
 		nua_respond(nh, SIP_500_INTERNAL_SERVER_ERROR, TAG_END());
+		PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", nh);
 		nua_handle_destroy(nh);
 		p_s_handle = NULL;
 		sip_trace_header(this, inst->interface_name, "RESPOND", DIRECTION_OUT);
@@ -2080,6 +2105,7 @@ void Psip::i_invite(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 		if (rtp_connect() < 0) {
 rtp_failed:
 			nua_respond(nh, SIP_500_INTERNAL_SERVER_ERROR, TAG_END());
+			PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", nh);
 			nua_handle_destroy(nh);
 			p_s_handle = NULL;
 			sip_trace_header(this, inst->interface_name, "RESPOND", DIRECTION_OUT);
@@ -2147,6 +2173,7 @@ void Psip::i_bye(int status, char const *phrase, nua_t *nua, nua_magic_t *magic,
 	sip_trace_header(this, inst->interface_name, "RESPOND", DIRECTION_OUT);
 	add_trace("respond", "value", "200 OK");
 	end_trace();
+	PDEBUG(DEBUG_SIP, "just remove nua_handle without destruction %x\n", nh);
 //	nua_handle_destroy(nh);
 	p_s_handle = NULL;
 
@@ -2175,6 +2202,7 @@ void Psip::i_cancel(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 	sip_trace_header(this, inst->interface_name, "CANCEL", DIRECTION_IN);
 	end_trace();
 
+	PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", nh);
 	nua_handle_destroy(nh);
 	p_s_handle = NULL;
 
@@ -2197,6 +2225,7 @@ void Psip::r_bye(int status, char const *phrase, nua_t *nua, nua_magic_t *magic,
 {
 	PDEBUG(DEBUG_SIP, "bye response received\n");
 
+	PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", nh);
 	nua_handle_destroy(nh);
 	p_s_handle = NULL;
 
@@ -2209,6 +2238,7 @@ void Psip::r_cancel(int status, char const *phrase, nua_t *nua, nua_magic_t *mag
 {
 	PDEBUG(DEBUG_SIP, "cancel response received\n");
 
+	PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", nh);
 	nua_handle_destroy(nh);
 	p_s_handle = NULL;
 
@@ -2375,6 +2405,7 @@ void Psip::r_options(int status, char const *phrase, nua_t *nua, nua_magic_t *ma
 		return;
 	}
 
+	PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", nh);
 	nua_handle_destroy(nh);
 	p_s_handle = NULL;
 
@@ -2435,21 +2466,30 @@ static void sip_callback(nua_event_t event, int status, char const *phrase, nua_
 	/* new handle */
 	switch (event) {
 	case nua_i_options:
-		if (!psip && !inst->options_handle) {
-			PDEBUG(DEBUG_SIP, "New options instance\n");
-			inst->options_handle = nh;
-		}
 		if (!psip) {
 			i_options(inst, status, phrase, nua, magic, nh, hmagic, sip, tags);
+			if (inst->register_handle != nh) {
+				PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", nh);
+				nua_handle_destroy(nh);
+			}
+			return;
+		}
+		break;
+	case nua_r_options:
+		if (!psip) {
+			r_options(inst, status, phrase, nua, magic, nh, hmagic, sip, tags);
 			return;
 		}
 		break;
 	case nua_i_register:
-		if (!inst->register_handle) {
+		if (!psip && !inst->register_handle) {
 			PDEBUG(DEBUG_SIP, "New register instance\n");
 			inst->register_handle = nh;
 		}
-		i_register(inst, status, phrase, nua, magic, nh, hmagic, sip, tags);
+		if (!psip) {
+			i_register(inst, status, phrase, nua, magic, nh, hmagic, sip, tags);
+			return;
+		}
 		break;
 	case nua_r_register:
 		if (!psip) {
@@ -2477,19 +2517,21 @@ static void sip_callback(nua_event_t event, int status, char const *phrase, nua_
 				FATAL("Cannot create Port instance.\n");
 		}
 		break;
+	case nua_i_outbound:
+		PDEBUG(DEBUG_SIP, "Outbound status\n");
+		break;
 	default:
-		if (!psip && inst->register_handle != nh) {
-			PDEBUG(DEBUG_SIP, "Destroying unknown instance\n");
-			nua_handle_destroy(nh);
-			return;
-		}
+		;
 	}
 
 	/* handle port process */
 	if (!psip) {
-		PERROR("no SIP Port found for handel %p\n", nh);
-		nua_respond(nh, SIP_500_INTERNAL_SERVER_ERROR, TAG_END());
-		nua_handle_destroy(nh);
+		if (nh != inst->register_handle) {
+			PERROR("no SIP Port found for handel %p\n", nh);
+			nua_respond(nh, SIP_500_INTERNAL_SERVER_ERROR, TAG_END());
+			PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", nh);
+			nua_handle_destroy(nh);
+		}
 		return;
 	}
 
@@ -2587,6 +2629,7 @@ void Psip::rtp_shutdown(void)
 	sip_trace_header(this, inst->interface_name, "RTP terminated", DIRECTION_IN);
 	end_trace();
 
+	PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", p_s_handle);
 	nua_handle_destroy(p_s_handle);
 	p_s_handle = NULL;
 
@@ -2607,6 +2650,8 @@ static int invite_option_timer(struct lcr_timer *timer, void *instance, int inde
 {
 	class Psip *psip = (class Psip *)instance;
 	struct sip_inst *inst = (struct sip_inst *) psip->p_s_sip_inst;
+
+	PDEBUG(DEBUG_SIP, "invite options timer fired\n");
 
 	sip_trace_header(psip, inst->interface_name, "OPTIONS", psip->p_s_invite_direction);
 	end_trace();
@@ -2637,6 +2682,7 @@ static int register_retry_timer(struct lcr_timer *timer, void *instance, int ind
 	if (inst->register_handle) {
 		/* stop option timer */
 		unsched_timer(&inst->register_option_timer);
+		PDEBUG(DEBUG_SIP, "nua_handle_destroy %x\n", inst->register_handle);
 		nua_handle_destroy(inst->register_handle);
 		inst->register_handle = NULL;
 	}
@@ -2648,6 +2694,9 @@ static int register_retry_timer(struct lcr_timer *timer, void *instance, int ind
 static int register_option_timer(struct lcr_timer *timer, void *instance, int index)
 {
 	struct sip_inst *inst = (struct sip_inst *)instance;
+
+	PDEBUG(DEBUG_SIP, "register options timer fired\n");
+
 	sip_trace_header(NULL, inst->interface_name, "OPTIONS", DIRECTION_OUT);
 	end_trace();
 
@@ -2774,8 +2823,6 @@ void sip_exit_inst(struct interface *interface)
 		stun_handle_destroy(inst->stun_handle);
 	if (inst->register_handle)
 		nua_handle_destroy(inst->register_handle);
-	if (inst->options_handle)
-		nua_handle_destroy(inst->options_handle);
 	if (inst->root)
 		su_root_destroy(inst->root);
 	if (inst->nua)
