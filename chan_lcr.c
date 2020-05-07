@@ -310,7 +310,7 @@ void free_call(struct chan_call *call)
 			if (call->dsp)
 				ast_dsp_free(call->dsp);
 			CDEBUG(call, NULL, "Call instance freed.\n");
-			free(call);
+			ast_free(call);
 			global_change = 1;
 			return;
 		}
@@ -1802,7 +1802,7 @@ static int handle_socket(struct lcr_fd *fd, unsigned int what, void *instance, i
 			}
 			/* free head */
 			admin_first = admin->next;
-			free(admin);
+			ast_free(admin);
 			global_change = 1;
 		} else {
 			CERROR(NULL, NULL, "Socket failed (errno %d).\n", errno);
@@ -1869,7 +1869,7 @@ void close_socket(void)
 	while(admin) {
 		temp = admin;
 		admin = admin->next;
-		free(temp);
+		ast_free(temp);
 	}
 	admin_first = NULL;
 
