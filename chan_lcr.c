@@ -2409,7 +2409,7 @@ struct ast_channel *lcr_request(const char *type, struct ast_format_cap *format,
 /*
  * call from asterisk
  */
-static int lcr_call(struct ast_channel *ast, char *dest, int timeout)
+static int lcr_call(struct ast_channel *ast, const char *dest, int timeout)
 {
 	union parameter newparam;
 	struct chan_call *call;
