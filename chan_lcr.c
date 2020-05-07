@@ -132,6 +132,8 @@ it is called from ast_channel process which has already locked ast_channel.
 #define HAVE_STRTOQ 1
 #define HAVE_INET_ATON 1
 
+#define AST_MODULE_SELF_SYM __internal_chan_lcr
+
 #include <asterisk/compiler.h>
 #ifdef LCR_FOR_ASTERISK
 #include <asterisk/buildopts.h>
