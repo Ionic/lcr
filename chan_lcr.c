@@ -618,8 +618,13 @@ void apply_opt(struct chan_call *call, char *data)
 //				#else
 //				struct ast_format src;
 //				struct ast_format dst;
+//				#if ASTERISK_VESION_NUM < 130000
 //				ast_format_set(&dst, AST_FORMAT_SLINEAR, 0);
 //				ast_format_set(&dst,(options.law=='a')?AST_FORMAT_ALAW:AST_FORMAT_ULAW , 0);
+//				#else
+//				dst = ast_format_slin;
+//				dst = (options.law=='a')?ast_format_alaw:ast_format_ulaw;
+//				#endif
 //				call->trans=ast_translator_build_path(&dst, &src);
 				#endif
 				#endif
@@ -1201,20 +1206,29 @@ static void lcr_in_setup(struct chan_call *call, int message_type, union paramet
 	ast->nativeformats = (options.law=='a')?AST_FORMAT_ALAW:AST_FORMAT_ULAW;
 	ast->readformat = ast->rawreadformat = ast->nativeformats;
 	ast->writeformat = ast->rawwriteformat =  ast->nativeformats;
-#else
-#if ASTERISK_VERSION_NUM < 110000
+#elif ASTERISK_VERSION_NUM < 110000
 	ast_format_set(&ast->rawwriteformat ,(options.law=='a')?AST_FORMAT_ALAW:AST_FORMAT_ULAW , 0);
 	ast_format_copy(&ast->rawreadformat, &ast->rawwriteformat);
 	ast_format_cap_set(ast->nativeformats, &ast->rawwriteformat);
 	ast_set_write_format(ast, &ast->rawwriteformat);
 	ast_set_read_format(ast, &ast->rawreadformat);
 #else
+#if ASTERISK_VERSION_NUM < 130000
 	ast_format_set(ast_channel_rawwriteformat(ast) ,(options.law=='a')?AST_FORMAT_ALAW:AST_FORMAT_ULAW , 0);
 	ast_format_copy(ast_channel_rawreadformat(ast), ast_channel_rawwriteformat(ast));
 	ast_format_cap_set(ast_channel_nativeformats(ast), ast_channel_rawwriteformat(ast));
+#else
+	ast_channel_set_rawwriteformat(ast, (options.law=='a')?ast_format_alaw:ast_format_ulaw);
+	ast_channel_set_rawreadformat(ast, ast_channel_rawwriteformat(ast));
+	struct ast_format_cap *native = ast_format_cap_alloc(AST_FORMAT_CAP_FLAG_DEFAULT);
+	if (native) {
+		ast_format_cap_append(native, ast_channel_rawwriteformat(ast), 0);
+		ast_channel_nativeformats_set(ast, native);
+		ao2_ref(native, -1);
+	}
+#endif
 	ast_set_write_format(ast, ast_channel_rawwriteformat(ast));
 	ast_set_read_format(ast, ast_channel_rawreadformat(ast));
-#endif
 #endif
 #if ASTERISK_VERSION_NUM < 110000
 	ast->priority = 1;
@@ -2107,29 +2121,32 @@ struct ast_channel *lcr_request(const char *type, struct ast_format_cap *format,
 #endif
 	/* configure channel */
 #if ASTERISK_VERSION_NUM < 100000
-#if ASTERISK_VERSION_NUM < 110000
 	ast->nativeformats = (options.law=='a')?AST_FORMAT_ALAW:AST_FORMAT_ULAW;
 	ast->readformat = ast->rawreadformat = ast->nativeformats;
 	ast->writeformat = ast->rawwriteformat =  ast->nativeformats;
-#else
-	ast_channel_nativeformats_set(ast, (options.law=='a')?AST_FORMAT_ALAW:AST_FORMAT_ULAW);
-	ast->readformat = ast->rawreadformat = ast_channel_nativeformats(ast);
-	ast->writeformat = ast->rawwriteformat =  ast_channel_nativeformats(ast);
-#endif
-#else
-#if ASTERISK_VERSION_NUM < 110000
+#elif ASTERISK_VERSION_NUM < 110000
 	ast_format_set(&ast->rawwriteformat ,(options.law=='a')?AST_FORMAT_ALAW:AST_FORMAT_ULAW , 0);
 	ast_format_copy(&ast->rawreadformat, &ast->rawwriteformat);
 	ast_format_cap_set(ast->nativeformats, &ast->rawwriteformat);
 	ast_set_write_format(ast, &ast->rawwriteformat);
 	ast_set_read_format(ast, &ast->rawreadformat);
 #else
+#if ASTERISK_VERSION_NUM < 130000
 	ast_format_set(ast_channel_rawwriteformat(ast) ,(options.law=='a')?AST_FORMAT_ALAW:AST_FORMAT_ULAW , 0);
 	ast_format_copy(ast_channel_rawreadformat(ast), ast_channel_rawwriteformat(ast));
 	ast_format_cap_set(ast_channel_nativeformats(ast), ast_channel_rawwriteformat(ast));
+#else
+	ast_channel_set_rawwriteformat(ast, (options.law=='a')?ast_format_alaw:ast_format_ulaw);
+	ast_channel_set_rawreadformat(ast, ast_channel_rawwriteformat(ast));
+	struct ast_format_cap *native = ast_format_cap_alloc(AST_FORMAT_CAP_FLAG_DEFAULT);
+	if (native) {
+		ast_format_cap_append(native, ast_channel_rawwriteformat(ast), 0);
+		ast_channel_nativeformats_set(ast, native);
+		ao2_ref(native, -1);
+	}
+#endif
 	ast_set_write_format(ast, ast_channel_rawwriteformat(ast));
 	ast_set_read_format(ast, ast_channel_rawreadformat(ast));
-#endif
 #endif
 #if ASTERISK_VERSION_NUM < 110000
 	ast->priority = 1;
@@ -2743,46 +2760,37 @@ static int lcr_write(struct ast_channel *ast, struct ast_frame *fr)
 	int len, l;
 
 #if ASTERISK_VERSION_NUM < 100000
-#ifdef AST_1_8_OR_HIGHER
-	if (!f->subclass.codec)
-#else
+#ifndef AST_1_8_OR_HIGHER
 	if (!f->subclass)
+#else
+	if (!f->subclass.codec)
 #endif
 		CDEBUG(NULL, ast, "No subclass\n");
 #endif
-#ifdef AST_1_8_OR_HIGHER
-#if ASTERISK_VERSION_NUM < 100000
-#if ASTERISK_VERSION_NUM < 110000
-	if (!(f->subclass.codec & ast->nativeformats)) {
-#else
-	if (!(f->subclass.codec & ast_channel_nativeformats(ast))) {
-#endif
-#else
-#if ASTERISK_VERSION_NUM < 110000
-	if (!ast_format_cap_iscompatible(ast->nativeformats, &f->subclass.format)) {
-#else
-	if (!ast_format_cap_iscompatible(ast_channel_nativeformats(ast), &f->subclass.format)) {
-#endif
-#endif
-#else
-#if ASTERISK_VERSION_NUM < 110000
+
+#ifndef AST_1_8_OR_HIGHER
 	if (!(f->subclass & ast->nativeformats)) {
+#elif ASTERISK_VERSION_NUM < 100000
+	if (!(f->subclass.codec & ast->nativeformats)) {
+#elif ASTERISK_VERSION_NUM < 110000
+	if (!ast_format_cap_iscompatible(ast->nativeformats, &f->subclass.format)) {
+#elif ASTERISK_VERSION_NUM < 130000
+	if (!ast_format_cap_iscompatible(ast_channel_nativeformats(ast), &f->subclass.format)) {
 #else
-	if (!(f->subclass & ast_channel_nativeformats(ast))) {
-#endif
+	if (ast_format_cap_iscompatible_format(ast_channel_nativeformats(ast), f->subclass.format) == AST_FORMAT_CMP_NOT_EQUAL) {
 #endif
 		CDEBUG(NULL, ast,
 	        	       "Unexpected format. "
 		       "Activating emergency conversion...\n");
 
-#ifdef AST_1_8_OR_HIGHER
-#if ASTERISK_VERSION_NUM < 100000
-		ast_set_write_format(ast, f->subclass.codec);
-#else
-		ast_set_write_format(ast, &f->subclass.format);
-#endif
-#else
+#ifndef AST_1_8_OR_HIGHER
 		ast_set_write_format(ast, f->subclass);
+#elif ASTERISK_VERSION_NUM < 100000
+		ast_set_write_format(ast, f->subclass.codec);
+#elif ASTERISK_VERSION_NUM < 130000
+		ast_set_write_format(ast, &f->subclass.format);
+#else
+		ast_set_write_format(ast, f->subclass.format);
 #endif
 #if ASTERISK_VERSION_NUM < 110000
 		f = (ast->writetrans) ? ast_translate(
@@ -2879,27 +2887,20 @@ static struct ast_frame *lcr_read(struct ast_channel *ast)
 	}
 
 	call->read_fr.frametype = AST_FRAME_VOICE;
-#ifdef AST_1_8_OR_HIGHER
-#if ASTERISK_VERSION_NUM < 100000
-#if ASTERISK_VERSION_NUM < 110000
-	call->read_fr.subclass.codec = ast->nativeformats;
-#else
-	call->read_fr.subclass.codec = ast_channel_nativeformats(ast);
-#endif
-#else
-#if ASTERISK_VERSION_NUM < 110000
-	ast_best_codec(ast->nativeformats, &call->read_fr.subclass.format);
-#else
-	ast_best_codec(ast_channel_nativeformats(ast), &call->read_fr.subclass.format);
-#endif
-	call->read_fr.subclass.integer = call->read_fr.subclass.format.id;
-#endif
-#else
-#if ASTERISK_VERSION_NUM < 110000
+#ifndef AST_1_8_OR_HIGHER
 	call->read_fr.subclass = ast->nativeformats;
+#elif ASTERISK_VERSION_NUM < 100000
+	call->read_fr.subclass.codec = ast->nativeformats;
+#elif ASTERISK_VERSION_NUM < 110000
+	ast_best_codec(ast->nativeformats, &call->read_fr.subclass.format);
+#elif ASTERISK_VERSION_NUM < 130000
+	ast_best_codec(ast_channel_nativeformats(ast), &call->read_fr.subclass.format);
+	call->read_fr.subclass.integer = call->read_fr.subclass.format.id;
 #else
-	call->read_fr.subclass = ast_channel_nativeformats(ast);
-#endif
+	struct ast_format *best_format;
+	ast_format_cap_get_format(ast_channel_nativeformats(ast), 0);
+	call->read_fr.subclass.format = best_format;
+	ao2_ref(best_format, -1);
 #endif
 	if (call->rebuffer) {
 		call->read_fr.datalen = call->framepos;
@@ -3534,12 +3535,20 @@ int load_module(void)
 	#if ASTERISK_VERSION_NUM < 100000
 	lcr_tech.capabilities = (options.law=='a')?AST_FORMAT_ALAW:AST_FORMAT_ULAW;
 	#else
-	struct ast_format tmp;
-	ast_format_set(&tmp ,(options.law=='a')?AST_FORMAT_ALAW:AST_FORMAT_ULAW , 0);
+	struct ast_format *tmp;
+	#if ASTERISK_VERSION_NUM < 130000
+	ast_format_set(tmp ,(options.law=='a')?AST_FORMAT_ALAW:AST_FORMAT_ULAW , 0);
 	if (!(lcr_tech.capabilities = ast_format_cap_alloc())) {
 		return AST_MODULE_LOAD_DECLINE;
 	}
 	ast_format_cap_add(lcr_tech.capabilities, &tmp);
+	#else
+	tmp = (options.law=='a')?ast_format_alaw:ast_format_ulaw;
+	if (!(lcr_tech.capabilities = ast_format_cap_alloc(AST_FORMAT_CAP_FLAG_DEFAULT))) {
+		return AST_MODULE_LOAD_DECLINE;
+	}
+	ast_format_cap_append(lcr_tech.capabilities, tmp, 0);
+	#endif
 	#endif
 	if (ast_channel_register(&lcr_tech)) {
 		CERROR(NULL, NULL, "Unable to register channel class\n");
@@ -3650,7 +3659,11 @@ int unload_module(void)
 	}
 
 #if ASTERISK_VERSION_NUM >= 100000
+#if ASTERISK_VERSION_NUM < 130000
 	lcr_tech.capabilities = ast_format_cap_destroy(lcr_tech.capabilities);
+#else
+	ao2_cleanup(lcr_tech.capabilities);
+#endif
 #endif
 	return 0;
 }
