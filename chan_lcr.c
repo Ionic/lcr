@@ -145,6 +145,7 @@ it is called from ast_channel process which has already locked ast_channel.
  */
 struct ast_channel;
 
+#include <asterisk.h>
 #include <asterisk/module.h>
 #include <asterisk/channel.h>
 #include <asterisk/config.h>
