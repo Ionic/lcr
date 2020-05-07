@@ -246,7 +246,14 @@ AS_IF([test "x$with_vootp" == xyes -o "x$with_vootp" == xyes], [
 
 # Checks for libraries.
 AC_CHECK_LIB([m], [main])
-AC_CHECK_LIB([ncurses], [main])
+LIBNCURSES=''
+AC_CHECK_LIB([ncurses], [main],
+             [AC_SUBST([LIBNCURSES], ["-lncurses"])
+              AC_DEFINE([HAVE_NCURSES], [1],
+                        [Define if you have libncurses])
+             ],
+             [AC_MSG_FAILURE(
+                 [libncurses not found, but strictly required])])
 AC_CHECK_LIB([pthread], [main])
 
 # Checks for header files.
