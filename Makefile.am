@@ -71,7 +71,7 @@ SUBDIRS += libgsmfr
 
 if ENABLE_GSMHR
 
-GSM_INCLUDE += -DWITH_GSMHR
+GSM_INCLUDE += -DWITH_GSMHR -Iinclude
 
 GSM_LIB += libgsmhr/libgsmhr.la
 
