@@ -1421,7 +1421,7 @@ static void lcr_in_information(struct chan_call *call, int message_type, union p
 #if ASTERISK_VERSION_NUM < 110000
 		strncat(ast->exten, param->information.id, AST_MAX_EXTENSION-1);
 #else
-		char *tmp[AST_MAX_EXTENSION];
+		char tmp[AST_MAX_EXTENSION];
 		snprintf(tmp,AST_MAX_EXTENSION,"%s%s",ast_channel_exten(ast),param->information.id);
 		ast_channel_exten_set(ast, tmp);
 #endif
