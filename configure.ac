@@ -93,11 +93,80 @@ AS_IF([test "x$with_asterisk" != xno],
       ])
 
 if test "x$with_asterisk" = "xyes"; then
+	ast_1_8_or_higher=
+
+	dnl Fetch version number.
+	dnl First, check older versions.
+	AC_CACHE_CHECK(
+		[for Asterisk version (10 and lower)],
+		[ast_cv_has_ASTERISK_VERSION_NUM], [dnl
+		AC_LANG_PUSH([C])
+		AC_COMPILE_IFELSE([dnl
+			AC_LANG_PROGRAM([dnl
+				#include <asterisk/version.h>
+				#ifndef ASTERISK_VERSION_NUM
+					#error No ASTERISK_VERSION_NUM
+				#endif],
+				[])],
+			[ast_cv_has_ASTERISK_VERSION_NUM='1'],
+			[ast_cv_has_ASTERISK_VERSION_NUM='no'])
+		AC_LANG_POP([C])])
+	AS_IF([test "x$ast_cv_has_ASTERISK_VERSION_NUM" = "xno"], [dnl
+		dnl ASTERISK_VERSION_NUM does not exist.
+		dnl Check for newer Asterisk versions (11 and up).
+		dnl Those define a function called ast_get_version_num, but
+		dnl it cannot easily be linked against (and hence used).
+		dnl The func_version.so module does include it, but linking
+		dnl it would be... insanely difficult.
+		dnl Workaround that issue by parsing asterisk -V instead.
+		AC_MSG_CHECKING([for Asterisk version (11 and higher)])
+		ast_cv_version_string="$(asterisk -V)"
+		ast_cv_version=''
+
+		AS_IF([test "x$?" = "x0"], [dnl
+			dnl Drop constant prelude.
+			ast_cv_version_tmp="$(printf '%s\n' "$ast_cv_version_string" | sed -e 's/Asterisk //g')"
+
+			dnl Mangle a development snapshot version. If the version is contained,
+			dnl then it'll always be the branch/tag name.
+			AS_IF([printf '%s\n' "$ast_cv_version_tmp" | grep -q 'GIT' >'/dev/null' 2>&1], [dnl
+				ast_cv_vesion_tmp="$(printf '%s\n' "$ast_cv_version_tmp" | awk -F '-' '{printf $2}')"])
+
+			dnl Sanity check on format.
+			dnl N.B.: The double brackets are m4-related.
+			AS_IF([printf '%s\n' "$ast_cv_version_tmp" | grep -q '^[[0-9]][[0-9]]*\.[[0-9]][[0-9]]*\.[[0-9]][[0-9]]*$' >'/dev/null' 2>&1], [], [dnl
+				AC_MSG_ERROR([version number format '$ast_cv_version_tmp' unsupport (development snapshot?)])])
+
+			dnl Get major vesion -verbatim.
+			ast_cv_version_major="$(printf '%s\n' "$ast_cv_version_tmp" | awk -F '.' '{print $1}')"
+
+			dnl Get minor version.
+			ast_cv_version_minor="$(printf '%s\n' "$ast_cv_version_tmp" | awk -F '.' '{print $2}')"
+
+			dnl Compat shim for 1.8 or newer.
+			AS_IF([test "$ast_cv_version_major" -gt "1"], [dnl
+				ast_1_8_or_higher="-DAST_1_8_OR_HIGHER"],
+				[test "$ast_cv_version_major" -eq "1" && test "$ast_cv_version_minor" -ge "8"], [dnl
+				ast_1_8_or_higher="-DAST_1_8_OR_HIGHER"])
+
+			# Optionally zero-padd to two digits.
+			ast_cv_version_minor="$(printf '%.2d\n' "$ast_cv_version_minor")"
+
+			dnl Get micro version, also optionally zero-padded to two digits.
+			ast_cv_version_micro="$(printf '%s\n' "$ast_cv_version_tmp" | awk -F '.' '{print $3}')"
+			ast_cv_version_micro="$(printf '%.2d\n' "$ast_cv_version_micro")"
+
+			dnl Merge components together.
+			ast_cv_version="$ast_cv_version_major$ast_cv_version_minor$ast_cv_version_micro"
+
+			AC_MSG_RESULT([$ast_cv_version])
+			AST_CFLAGS="-DASTERISK_VERSION_NUM=\"$ast_cv_version\""],
+		[AC_MSG_ERROR([no legacy Asterisk version (10 and lower) detected and no asterisk binary executable])])])
+
 	dnl detect whether asterisk/indications.h defines ast_tone_zone_sound (1.6.2
 	dnl and later), ind_tone_zone_sound (1.6.0) or tone_zone_sound (1.4)
 	ast_tone_zone_sound=
 	apc_test_result=
-	ast_1_8_or_higher=
 
 	AC_CHECK_TYPE([struct ast_tone_zone_sound],
 		[ast_tone_zone_sound=ast_tone_zone_sound], [], [
@@ -139,7 +208,7 @@ if test "x$with_asterisk" = "xyes"; then
 		ast_1_8_or_higher="-DAST_1_8_OR_HIGHER"
 	fi
 
-	AST_CFLAGS="-Dast_tone_zone_sound=$ast_tone_zone_sound $ast_1_8_or_higher"
+	AST_CFLAGS="$AST_CFLAGS -Dast_tone_zone_sound=$ast_tone_zone_sound $ast_1_8_or_higher"
 
 	AC_SUBST([AST_CFLAGS])
 fi
