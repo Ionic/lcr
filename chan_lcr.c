@@ -1019,7 +1019,7 @@ static void lcr_in_setup(struct chan_call *call, int message_type, union paramet
 #ifdef AST_1_8_OR_HIGHER
 	if (param->setup.callerinfo.id[0]) {
 		ast_caller->id.number.valid = 1;
-		ast_caller->id.number.str = strdup(param->setup.callerinfo.id);
+		ast_caller->id.number.str = ast_strdup(param->setup.callerinfo.id);
 		if (!param->setup.callerinfo.id[0]) {
 			ast_caller->id.number.presentation = AST_PRES_RESTRICTED;
 			ast_caller->id.number.plan = (0 << 4) | 1;
@@ -1063,7 +1063,7 @@ static void lcr_in_setup(struct chan_call *call, int message_type, union paramet
 	}
 	if (param->setup.callerinfo.id2[0]) {
 		ast_caller->ani.number.valid = 1;
-		ast_caller->ani.number.str = strdup(param->setup.callerinfo.id2);
+		ast_caller->ani.number.str = ast_strdup(param->setup.callerinfo.id2);
 		switch (param->setup.callerinfo.present2) {
 			case INFO_PRESENT_ALLOWED:
 				ast_caller->ani.number.presentation = AST_PRES_ALLOWED;
@@ -1103,14 +1103,14 @@ static void lcr_in_setup(struct chan_call *call, int message_type, union paramet
 	}
 	if (param->setup.callerinfo.name[0]) {
 		ast_caller->id.name.valid = 1;
-		ast_caller->id.name.str = strdup(param->setup.callerinfo.name);
+		ast_caller->id.name.str = ast_strdup(param->setup.callerinfo.name);
 	}
 #if ASTERISK_VERSION_NUM >= 110000
 	ast_channel_caller_set(ast, ast_caller);
 #endif
 	if (param->setup.redirinfo.id[0]) {
 		ast_redir->from.number.valid = 1;
-		ast_redir->from.number.str = strdup(param->setup.redirinfo.id);
+		ast_redir->from.number.str = ast_strdup(param->setup.redirinfo.id);
 		switch (param->setup.redirinfo.present) {
 			case INFO_PRESENT_ALLOWED:
 				ast_redir->from.number.presentation = AST_PRES_ALLOWED;
@@ -1154,13 +1154,13 @@ static void lcr_in_setup(struct chan_call *call, int message_type, union paramet
 #else
 	memset(&ast->cid, 0, sizeof(ast->cid));
 	if (param->setup.callerinfo.id[0])
-		ast->cid.cid_num = strdup(param->setup.callerinfo.id);
+		ast->cid.cid_num = ast_strdup(param->setup.callerinfo.id);
 	if (param->setup.callerinfo.id2[0])
-		ast->cid.cid_ani = strdup(param->setup.callerinfo.id2);
+		ast->cid.cid_ani = ast_strdup(param->setup.callerinfo.id2);
 	if (param->setup.callerinfo.name[0])
-		ast->cid.cid_name = strdup(param->setup.callerinfo.name);
+		ast->cid.cid_name = ast_strdup(param->setup.callerinfo.name);
 	if (param->setup.redirinfo.id[0])
-		ast->cid.cid_rdnis = strdup(numberrize_callerinfo(param->setup.redirinfo.id, param->setup.redirinfo.ntype, options.national, options.international));
+		ast->cid.cid_rdnis = ast_strdup(numberrize_callerinfo(param->setup.redirinfo.id, param->setup.redirinfo.ntype, options.national, options.international));
 	switch (param->setup.callerinfo.present) {
 		case INFO_PRESENT_ALLOWED:
 			ast->cid.cid_pres = AST_PRES_ALLOWED;
@@ -2177,7 +2177,7 @@ struct ast_channel *lcr_request(const char *type, int format, void *data, int *c
 	if (req_caller->ani.number.valid)
 	  if (req_caller->ani.number.str)
 	    if (req_caller->ani.number.str[0])
-		ast->caller.ani.number.str=		strdup(req_caller->ani.number.str);
+		ast->caller.ani.number.str=		ast_strdup(req_caller->ani.number.str);
 	ast->caller.ani.number.plan=			req_caller->ani.number.plan;
 	ast->caller.ani.number.presentation=		req_caller->ani.number.presentation;
 
@@ -2185,21 +2185,21 @@ struct ast_channel *lcr_request(const char *type, int format, void *data, int *c
 	if (req_caller->ani.name.valid)
 	  if (req_caller->ani.name.str)
 	    if (req_caller->ani.name.str[0])
-		ast->caller.ani.name.str=		strdup(req_caller->ani.name.str);
+		ast->caller.ani.name.str=		ast_strdup(req_caller->ani.name.str);
 	ast->caller.ani.name.presentation=		req_caller->ani.name.presentation;
 
 	ast->caller.ani.subaddress.valid=		req_caller->ani.subaddress.valid;
 	if (req_caller->ani.subaddress.valid)
 	  if (req_caller->ani.subaddress.str)
 	    if (req_caller->ani.subaddress.str[0])
-		ast->caller.ani.subaddress.str=		strdup(req_caller->ani.subaddress.str);
+		ast->caller.ani.subaddress.str=		ast_strdup(req_caller->ani.subaddress.str);
 	ast->caller.ani.subaddress.type=		req_caller->ani.subaddress.type;
 
 	ast->caller.id.number.valid=			req_caller->id.number.valid;
 	if (req_caller->id.number.valid)
 	  if (req_caller->id.number.str)
 	    if (req_caller->id.number.str[0])
-		ast->caller.id.number.str=		strdup(req_caller->id.number.str);
+		ast->caller.id.number.str=		ast_strdup(req_caller->id.number.str);
 	ast->caller.id.number.plan=			req_caller->id.number.plan;
 	ast->caller.id.number.presentation=		req_caller->id.number.presentation;
 
@@ -2207,26 +2207,26 @@ struct ast_channel *lcr_request(const char *type, int format, void *data, int *c
 	if (req_caller->id.name.valid)
 	  if (req_caller->id.name.str)
 	    if (req_caller->id.name.str[0])
-		ast->caller.id.name.str=		strdup(req_caller->id.name.str);
+		ast->caller.id.name.str=		ast_strdup(req_caller->id.name.str);
 	ast->caller.id.name.presentation=		req_caller->id.name.presentation;
 
 	ast->caller.id.subaddress.valid=		req_caller->id.subaddress.valid;
 	if (req_caller->id.subaddress.valid)
 	  if (req_caller->id.subaddress.str)
 	    if (req_caller->id.subaddress.str[0])
-		ast->caller.id.subaddress.str=		strdup(req_caller->id.subaddress.str);
+		ast->caller.id.subaddress.str=		ast_strdup(req_caller->id.subaddress.str);
 	ast->caller.id.subaddress.type=			req_caller->id.subaddress.type;
 
 	if (requestor->dialed.number.str)
 	  if (requestor->dialed.number.str[0])
-		ast->dialed.number.str=			strdup(requestor->dialed.number.str);
+		ast->dialed.number.str=			ast_strdup(requestor->dialed.number.str);
 	ast->dialed.number.plan=			requestor->dialed.number.plan;
 
 	ast->dialed.subaddress.valid=			requestor->dialed.subaddress.valid;
 	if (requestor->dialed.subaddress.valid)
 	  if (requestor->dialed.subaddress.str)
 	    if (requestor->dialed.subaddress.str[0])
-		ast->dialed.subaddress.str=		strdup(requestor->dialed.subaddress.str);
+		ast->dialed.subaddress.str=		ast_strdup(requestor->dialed.subaddress.str);
 	ast->dialed.subaddress.type=			requestor->dialed.subaddress.type;
 
 	ast->dialed.transit_network_select=		requestor->dialed.transit_network_select;
@@ -2237,7 +2237,7 @@ struct ast_channel *lcr_request(const char *type, int format, void *data, int *c
 	if (req_redir->from.number.valid)
 	  if (req_redir->from.number.str)
 	    if (req_redir->from.number.str[0])
-		ast->redirecting.from.number.str=	strdup(req_redir->from.number.str);
+		ast->redirecting.from.number.str=	ast_strdup(req_redir->from.number.str);
 	ast->redirecting.from.number.plan=		req_redir->from.number.plan;
 	ast->redirecting.from.number.presentation=	req_redir->from.number.presentation;
 
@@ -2245,7 +2245,7 @@ struct ast_channel *lcr_request(const char *type, int format, void *data, int *c
 	if (req_redir->to.number.valid)
 	  if (req_redir->to.number.str)
 	    if (req_redir->to.number.str[0])
-		ast->redirecting.to.number.str=		strdup(req_redir->to.number.str);
+		ast->redirecting.to.number.str=		ast_strdup(req_redir->to.number.str);
 	ast->redirecting.to.number.plan=		req_redir->to.number.plan;
 	ast->redirecting.to.number.presentation=	req_redir->to.number.presentation;
 #endif
