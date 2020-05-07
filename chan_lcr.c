@@ -2027,14 +2027,16 @@ static void *chan_thread(void *arg)
  * new asterisk instance
  */
 static
-#ifdef AST_1_8_OR_HIGHER
-#if ASTERISK_VERSION_NUM < 100000
-struct ast_channel *lcr_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause)
-#else
-struct ast_channel *lcr_request(const char *type, struct ast_format_cap *format, const struct ast_channel *requestor, void *data, int *cause)
-#endif
-#else
+#ifndef AST_1_8_OR_HIGHER
 struct ast_channel *lcr_request(const char *type, int format, void *data, int *cause)
+#elif ASTERISK_VERSION_NUM < 100000
+struct ast_channel *lcr_request(const char *type, format_t format, const struct ast_channel *requestor, void *data, int *cause)
+#elif ASTERISK_VERSION_NUM < 110000
+struct ast_channel *lcr_request(const char *type, struct ast_format_cap *format, const struct ast_channel *requestor, void *data, int *cause)
+#elif ASTERISK_VERSION_NUM < 130000
+struct ast_channel *lcr_request(const char *type, struct ast_format_cap *format, const struct ast_channel *requestor, const char *addr, int *cause)
+#else
+struct ast_channel *lcr_request(const char *type, struct ast_format_cap *format, const struct ast_assigned_ids *assignedids, const struct ast_channel *requestor, const char *addr, int *cause)
 #endif
 {
 	char exten[256], *dial, *interface, *opt;
@@ -2046,7 +2048,11 @@ struct ast_channel *lcr_request(const char *type, int format, void *data, int *c
 #endif
 
 	ast_mutex_lock(&chan_lock);
+#if ASTERISK_VERSION_NUM < 110000
 	CDEBUG(NULL, NULL, "Received request from Asterisk. (data=%s)\n", (char *)data);
+#else
+	CDEBUG(NULL, NULL, "Received request from Asterisk. (addr=%s)\n", addr);
+#endif
 
 	/* if socket is closed */
 	if (lcr_sock < 0) {
@@ -2147,13 +2153,17 @@ struct ast_channel *lcr_request(const char *type, int format, void *data, int *c
 	call->state = CHAN_LCR_STATE_OUT_PREPARE;
 
 	/*
-	 * Extract interface, dialstring, options from data.
+	 * Extract interface, dialstring, options from data/addr.
 	 * Formats can be:
 	 * 	<dialstring>
 	 * 	<interface>/<dialstring>
 	 * 	<interface>/<dialstring>/options
 	 */
+#if ASTERISK_VERSION_NUM < 110000
 	strncpy(exten, (char *)data, sizeof(exten)-1);
+#else
+	strncpy(exten, addr, sizeof(exten)-1);
+#endif
 	exten[sizeof(exten)-1] = '\0';
 	if ((dial = strchr(exten, '/'))) {
 		*dial++ = '\0';
