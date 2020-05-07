@@ -101,6 +101,8 @@ if test "x$with_asterisk" = "xyes"; then
 
 	AC_CHECK_TYPE([struct ast_tone_zone_sound],
 		[ast_tone_zone_sound=ast_tone_zone_sound], [], [
+#define AST_MODULE_SELF_SYM __internal_chan_lcr
+
 #include <asterisk.h>
 #include <asterisk/linkedlists.h>
 #include <asterisk/indications.h>])
@@ -108,12 +110,16 @@ if test "x$with_asterisk" = "xyes"; then
 	AS_IF([test "x$ast_tone_zone_sound" = "x"],
 		[AC_CHECK_TYPE([struct ind_tone_zone_sound],
 			[ast_tone_zone_sound=ind_tone_zone_sound], [], [
+#define AST_MODULE_SELF_SYM __internal_chan_lcr
+
 #include <asterisk.h>
 #include <asterisk/linkedlists.h>
 #include <asterisk/indications.h>])])
 	AS_IF([test "x$ast_tone_zone_sound" = "x"],
 		[AC_CHECK_TYPE([struct tone_zone_sound],
 			[ast_tone_zone_sound=tone_zone_sound], [], [
+#define AST_MODULE_SELF_SYM __internal_chan_lcr
+
 #include <asterisk.h>
 #include <asterisk/indications.h>])])
 
@@ -124,6 +130,8 @@ if test "x$with_asterisk" = "xyes"; then
 
 	AC_CHECK_TYPE([struct ast_party_caller],
 		[apc_test_result=yes], [], [
+#define AST_MODULE_SELF_SYM __internal_chan_lcr
+
 #include <asterisk.h>
 #include <asterisk/channel.h>])
 
