@@ -2060,7 +2060,7 @@ struct ast_channel *lcr_request(const char *type, int format, void *data, int *c
 		return NULL;
 	}
 
-	/* create asterisk channel instrance */
+	/* create asterisk channel instance */
 
 	#ifdef LCR_FOR_ASTERISK
 #ifdef AST_1_8_OR_HIGHER
