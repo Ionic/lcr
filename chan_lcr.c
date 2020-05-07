@@ -939,11 +939,11 @@ CDEBUG(call, ast, "Got 'sending complete', but extension '%s' will not match at 
 static void lcr_in_setup(struct chan_call *call, int message_type, union parameter *param)
 {
 	struct ast_channel *ast;
-#ifdef AST_1_8_OR_HIGHER
+#ifndef AST_1_8_OR_HIGHER
+	struct ast_callerid *ast_caller;
+#else
 	struct ast_party_redirecting *ast_redir;
 	struct ast_party_caller *ast_caller;
-#else
-	struct ast_callerid *ast_caller;
 #endif
 #if ASTERISK_VERSION_NUM >= 110000
 	struct ast_party_redirecting s_ast_redir;
@@ -969,13 +969,11 @@ static void lcr_in_setup(struct chan_call *call, int message_type, union paramet
 #endif
 	#endif
 
-#if ASTERISK_VERSION_NUM < 110000
-#ifdef AST_1_8_OR_HIGHER
+#ifndef AST_1_8_OR_HIGHER
+	ast_caller = &ast->cid;
+#elif ASTERISK_VERSION_NUM < 110000
 	ast_redir = &ast->redirecting;
 	ast_caller = &ast->caller;
-#else
-	ast_caller = &ast->cid;
-#endif
 #else
 	ast_redir = &s_ast_redir;
 	ast_caller = &s_ast_caller;
