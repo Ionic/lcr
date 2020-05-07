@@ -326,7 +326,7 @@ struct chan_call *alloc_call(void)
 	while(*callp)
 		callp = &((*callp)->next);
 
-	*callp = (struct chan_call *)calloc(1, sizeof(struct chan_call));
+	*callp = (struct chan_call *)ast_calloc(1, sizeof(struct chan_call));
 	if (*callp)
 		memset(*callp, 0, sizeof(struct chan_call));
 	if (pipe((*callp)->pipe) < 0) {
@@ -381,7 +381,7 @@ int send_message(int message_type, unsigned int ref, union parameter *param)
 	adminp = &admin_first;
 	while(*adminp)
 		adminp = &((*adminp)->next);
-	admin = (struct admin_list *)calloc(1, sizeof(struct admin_list));
+	admin = (struct admin_list *)ast_calloc(1, sizeof(struct admin_list));
 	if (!admin) {
 		CERROR(NULL, NULL, "No memory for message to LCR.\n");
 		return -1;
