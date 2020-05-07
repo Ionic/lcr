@@ -192,7 +192,7 @@ lcr_LDADD = $(LIBCRYPTO) $(MISDN_LIB) -lpthread $(GSM_LIB) $(SIP_LIB) $(VOOTP_LI
 
 
 lcradmin_SOURCES = lcradmin.c cause.c options.c
-lcradmin_LDADD = $(LIBNCURSES)
+lcradmin_LDADD = $(LIBNCURSES) $(LIBTINFO)
 
 genextension_SOURCES = genext.c options.c extension.c
 

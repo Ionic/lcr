@@ -254,6 +254,14 @@ AC_CHECK_LIB([ncurses], [main],
              ],
              [AC_MSG_FAILURE(
                  [libncurses not found, but strictly required])])
+dnl Optional tinfo library. If available, it must be linked against.
+dnl Only linking libncurses will likely fail with unresolved symbols.
+LIBTINFO=''
+AC_CHECK_LIB([tinfo], [keypad],
+             [AC_SUBST([LIBTINFO], ["-ltinfo"])
+              AC_DEFINE([HAVE_TINFO], [1],
+                        [Define if you have libtinfo])
+             ])
 AC_CHECK_LIB([pthread], [main])
 
 # Checks for header files.
