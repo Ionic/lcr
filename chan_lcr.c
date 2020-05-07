@@ -3169,6 +3169,7 @@ static int lcr_send_text(struct ast_channel *ast, const char *text)
 /*
  * bridge process
  */
+#if ASTERISK_VERSION_NUM < 130000
 enum ast_bridge_result lcr_bridge(struct ast_channel *ast1,
 				  struct ast_channel *ast2, int flags,
 				  struct ast_frame **fo,
@@ -3327,6 +3328,8 @@ return AST_BRIDGE_FAILED;
 	ast_mutex_unlock(&chan_lock);
 	return AST_BRIDGE_COMPLETE;
 }
+#endif
+
 static struct ast_channel_tech lcr_tech = {
 	.type= lcr_type,
 	.description = "Channel driver for connecting to Linux-Call-Router",
@@ -3345,7 +3348,9 @@ static struct ast_channel_tech lcr_tech = {
 	#endif
 
 	.call = lcr_call,
+#if ASTERISK_VERSION_NUM < 130000
 	.bridge = lcr_bridge,
+#endif
 	.hangup = lcr_hangup,
 	.answer = lcr_answer,
 	.read = lcr_read,
