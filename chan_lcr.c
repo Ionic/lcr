@@ -960,10 +960,12 @@ static void lcr_in_setup(struct chan_call *call, int message_type, union paramet
 	#endif
 
 	#ifdef LCR_FOR_ASTERISK
-#ifdef AST_1_8_OR_HIGHER
+#ifndef AST_1_8_OR_HIGHER
+	ast = ast_channel_alloc(1, AST_STATE_RESERVED, NULL, NULL, "", NULL, "", 0, "%s/%d", lcr_type, ++glob_channel);
+#elif ASTERISK_VERSION_NUM < 130000
 	ast = ast_channel_alloc(1, AST_STATE_RESERVED, NULL, NULL, "", NULL, "", "", 0, "%s/%d", lcr_type, ++glob_channel);
 #else
-	ast = ast_channel_alloc(1, AST_STATE_RESERVED, NULL, NULL, "", NULL, "", 0, "%s/%d", lcr_type, ++glob_channel);
+	ast = ast_channel_alloc(1, AST_STATE_RESERVED, NULL, NULL, "", NULL, "", NULL, NULL, 0, "%s/%d", lcr_type, ++glob_channel);
 #endif
 	#endif
 
@@ -2066,10 +2068,12 @@ struct ast_channel *lcr_request(const char *type, int format, void *data, int *c
 	/* create asterisk channel instance */
 
 	#ifdef LCR_FOR_ASTERISK
-#ifdef AST_1_8_OR_HIGHER
+#ifndef AST_1_8_OR_HIGHER
+	ast = ast_channel_alloc(1, AST_STATE_RESERVED, NULL, NULL, "", NULL, "", 0, "%s/%d", lcr_type, ++glob_channel);
+#elif ASTERISK_VERSION_NUM < 130000
 	ast = ast_channel_alloc(1, AST_STATE_RESERVED, NULL, NULL, NULL, NULL, NULL, NULL, 0, "%s/%d", lcr_type, ++glob_channel);
 #else
-	ast = ast_channel_alloc(1, AST_STATE_RESERVED, NULL, NULL, "", NULL, "", 0, "%s/%d", lcr_type, ++glob_channel);
+	ast = ast_channel_alloc(1, AST_STATE_RESERVED, NULL, NULL, NULL, NULL, NULL, assignedids, NULL, 0, "%s/%d", lcr_type, ++glob_channel);
 #endif
 	#endif
 
