@@ -3182,7 +3182,7 @@ enum ast_bridge_result lcr_bridge(struct ast_channel *ast1,
 	struct ast_frame	*f;
 	int			bridge_id;
 
-/* bridge is disabled, because there is currerntly no concept to bridge mISDN channels */
+/* bridge is disabled, because there is currently no concept to bridge mISDN channels */
 return AST_BRIDGE_FAILED;
 
 	CDEBUG(NULL, NULL, "Received bridging request from Asterisk.\n");
