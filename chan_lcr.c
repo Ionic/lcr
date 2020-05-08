@@ -929,6 +929,19 @@ CDEBUG(call, ast, "Got 'sending complete', but extension '%s' will not match at 
 	snprintf(ast->name, sizeof(ast->name), "%s/%s-%04x",lcr_type ,ast->cid.cid_num, ast_random() & 0xffff);
 	#endif
 
+#if ASTERISK_VERSION_NUM >= 130000
+	/*
+	 * This is crucial.
+	 * Not unlocking the channel before starting the PBX will lead to it
+	 * deadlocking since the start function also tries to lock it.
+	 *
+	 * Asterisk 13+ changed the semantics of new channels to always be
+	 * created in a locked state, while earlier releases returned an
+	 * unlocked channel.
+	 */
+	ast_channel_unlock(ast);
+#endif
+
 	ret = ast_pbx_start(ast);
 	if (ret < 0) {
 		cause = (ret==-2)?34:27;
