@@ -2910,7 +2910,7 @@ static struct ast_frame *lcr_read(struct ast_channel *ast)
 	call->read_fr.subclass.integer = call->read_fr.subclass.format.id;
 #else
 	struct ast_format *best_format;
-	ast_format_cap_get_format(ast_channel_nativeformats(ast), 0);
+	best_format = ast_format_cap_get_format(ast_channel_nativeformats(ast), 0);
 	call->read_fr.subclass.format = best_format;
 	ao2_ref(best_format, -1);
 #endif
