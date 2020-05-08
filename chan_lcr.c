@@ -935,7 +935,13 @@ CDEBUG(call, ast, "Got 'sending complete', but extension '%s' will not match at 
 		goto release;
 	}
 	call->pbx_started = 1;
-		ast_setstate(ast, AST_STATE_RING);
+#if ASTERISK_VERSION_NUM >= 130000
+	ast_channel_lock(ast);
+#endif
+	ast_setstate(ast, AST_STATE_RING);
+#if ASTERISK_VERSION_NUM >= 130000
+	ast_channel_unlock(ast);
+#endif
 }
 
 /*
@@ -1447,7 +1453,13 @@ static void lcr_in_information(struct chan_call *call, int message_type, union p
 	if (call->state == CHAN_LCR_STATE_IN_SETUP) {
 		CDEBUG(call, call->ast, "Changing from SETUP to DIALING state.\n");
 		call->state = CHAN_LCR_STATE_IN_DIALING;
+//#if ASTERISK_VERSION_NUM >= 130000
+//		ast_channel_lock(ast);
+//#endif
 //		ast_setstate(ast, AST_STATE_DIALING);
+//#if ASTERISK_VERSION_NUM >= 130000
+//		ast_channel_unlock(ast);
+//#endif
 	}
 
 	/* queue digits */
@@ -2952,7 +2964,13 @@ static int lcr_indicate(struct ast_channel *ast, int cond, const void *data, siz
 	switch (cond) {
 		case AST_CONTROL_BUSY:
 			CDEBUG(call, ast, "Received indicate AST_CONTROL_BUSY from Asterisk.\n");
+#if ASTERISK_VERSION_NUM >= 130000
+			ast_channel_lock(ast);
+#endif
 			ast_setstate(ast, AST_STATE_BUSY);
+#if ASTERISK_VERSION_NUM >= 130000
+			ast_channel_unlock(ast);
+#endif
 			if (call->state != CHAN_LCR_STATE_OUT_DISCONNECT) {
 				/* send message to lcr */
 				memset(&newparam, 0, sizeof(union parameter));
@@ -3010,7 +3028,13 @@ static int lcr_indicate(struct ast_channel *ast, int cond, const void *data, siz
 			break;
 		case AST_CONTROL_RINGING:
 			CDEBUG(call, ast, "Received indicate AST_CONTROL_RINGING from Asterisk.\n");
+#if ASTERISK_VERSION_NUM >= 130000
+			ast_channel_lock(ast);
+#endif
 			ast_setstate(ast, AST_STATE_RING);
+#if ASTERISK_VERSION_NUM >= 130000
+			ast_channel_unlock(ast);
+#endif
 			if (call->state == CHAN_LCR_STATE_IN_SETUP
 			 || call->state == CHAN_LCR_STATE_IN_DIALING
 			 || call->state == CHAN_LCR_STATE_IN_PROCEEDING) {
