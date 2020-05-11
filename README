@@ -24,3 +24,18 @@ Read the documentation at http://www.linux-call-router.de
 Also you will find a quick howto there.
 
 
+Known Issues:
+-------------
+
+Using Asterisk 13+, Asterisk seems to crash when passing incoming PJSIP calls
+to chan_lcr. The opposite does not seem to be true.
+
+[INCOMING] PJSIP -> dialplan -> chan_lcr -> crash
+[OUTGOING] chan_lcr -> dialplan -> PJSIP -> no crash
+
+This issue has been observed with Asterisk 16.10.0, but older versions are
+likely also affected.
+
+Not tested (yet):
+
+[OUTGOING] PJSIP -> dialplan -> chan_lcr
